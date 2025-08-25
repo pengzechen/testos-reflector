@@ -108,6 +108,10 @@ timer_handler(uint64_t *stack_pointer)
     uint32_t current_cpu = get_current_cpu_id();
     scheduler_tick(current_cpu);
 
+    // 检查并唤醒到期的睡眠任务
+    extern void wake_up_sleeping_tasks(uint32_t cpu_id);
+    wake_up_sleeping_tasks(current_cpu);
+
     // 设置调度标志位，延迟到中断处理完成后再调度
     // 这样可以确保GIC的EOIR和DIR已经写入，避免中断丢失
     need_schedule_flag = 1;

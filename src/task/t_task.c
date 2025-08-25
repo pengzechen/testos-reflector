@@ -53,6 +53,8 @@ scheduler_init(uint32_t cpu_id)
     scheduler->ready_queue_head = NULL;
     scheduler->ready_queue_tail = NULL;
     scheduler->ready_count      = 0;
+    scheduler->sleep_queue_head = NULL;
+    scheduler->sleep_count      = 0;
 
     logger_info("Scheduler initialized for CPU %u\n", cpu_id);
 }
@@ -186,18 +188,19 @@ task_create(const char *name, void (*entry_point)(void *), void *arg, uint32_t c
         my_snprintf(task->name, sizeof(task->name), "task_%u", task->task_id);
     }
 
-    task->state           = TASK_READY;
-    task->cpu_id          = cpu_id;
-    task->stack_top       = task->stack_base + (TASK_STACK_SIZE / sizeof(uint64_t)) - 1;
-    task->stack_size      = TASK_STACK_SIZE;
-    task->time_slice      = TIME_SLICE_TICKS;
-    task->remaining_ticks = TIME_SLICE_TICKS;
-    task->total_runtime   = 0;
-    task->last_scheduled  = 0;
-    task->next            = NULL;
-    task->prev            = NULL;
-    task->entry_point     = entry_point;
-    task->arg             = arg;
+    task->state             = TASK_READY;
+    task->cpu_id            = cpu_id;
+    task->stack_top         = task->stack_base + (TASK_STACK_SIZE / sizeof(uint64_t)) - 1;
+    task->stack_size        = TASK_STACK_SIZE;
+    task->time_slice        = TIME_SLICE_TICKS;
+    task->remaining_ticks   = TIME_SLICE_TICKS;
+    task->total_runtime     = 0;
+    task->last_scheduled    = 0;
+    task->sleep_until_ticks = 0;
+    task->next              = NULL;
+    task->prev              = NULL;
+    task->entry_point       = entry_point;
+    task->arg               = arg;
 
     // 初始化上下文
     init_task_context(task);
@@ -616,5 +619,183 @@ task_dump_all_info(void)
 
     for (uint32_t i = 0; i < T_SMP_NUM; i++) {
         task_dump_info(i);
+    }
+}
+
+// 添加任务到睡眠队列（按唤醒时间排序）
+static void
+add_to_sleep_queue(task_t *task)
+{
+    if (!task)
+        return;
+
+    uint32_t cpu_id = task->cpu_id;
+    if (cpu_id >= T_SMP_NUM)
+        return;
+
+    cpu_scheduler_t *scheduler = &g_task_manager.schedulers[cpu_id];
+
+    task->state = TASK_SLEEPING;
+    task->next  = NULL;
+    task->prev  = NULL;
+
+    // 如果睡眠队列为空，直接添加
+    if (!scheduler->sleep_queue_head) {
+        scheduler->sleep_queue_head = task;
+        scheduler->sleep_count++;
+        return;
+    }
+
+    // 按唤醒时间排序插入（最早唤醒的在前面）
+    task_t *current = scheduler->sleep_queue_head;
+    task_t *prev    = NULL;
+
+    while (current && current->sleep_until_ticks <= task->sleep_until_ticks) {
+        prev    = current;
+        current = current->next;
+    }
+
+    // 插入到正确位置
+    if (!prev) {
+        // 插入到队列头
+        task->next                  = scheduler->sleep_queue_head;
+        scheduler->sleep_queue_head = task;
+        if (task->next) {
+            task->next->prev = task;
+        }
+    } else {
+        // 插入到中间或末尾
+        task->next = current;
+        task->prev = prev;
+        prev->next = task;
+        if (current) {
+            current->prev = task;
+        }
+    }
+
+    scheduler->sleep_count++;
+    logger_debug("Added task '%s' to sleep queue (wake at tick %llu)\n",
+                 task->name,
+                 task->sleep_until_ticks);
+}
+
+// 从睡眠队列中移除任务
+static void
+remove_from_sleep_queue(task_t *task)
+{
+    if (!task)
+        return;
+
+    uint32_t cpu_id = task->cpu_id;
+    if (cpu_id >= T_SMP_NUM)
+        return;
+
+    cpu_scheduler_t *scheduler = &g_task_manager.schedulers[cpu_id];
+
+    // 更新链表指针
+    if (task->prev) {
+        task->prev->next = task->next;
+    } else {
+        // 这是队列头
+        scheduler->sleep_queue_head = task->next;
+    }
+
+    if (task->next) {
+        task->next->prev = task->prev;
+    }
+
+    task->next = NULL;
+    task->prev = NULL;
+    scheduler->sleep_count--;
+
+    logger_debug("Removed task '%s' from sleep queue\n", task->name);
+}
+
+// 检查并唤醒到期的睡眠任务
+void
+wake_up_sleeping_tasks(uint32_t cpu_id)
+{
+    if (cpu_id >= T_SMP_NUM)
+        return;
+
+    cpu_scheduler_t *scheduler    = &g_task_manager.schedulers[cpu_id];
+    uint64_t         current_tick = timer_get_system_ticks();
+
+    task_t *current = scheduler->sleep_queue_head;
+    while (current && current->sleep_until_ticks <= current_tick) {
+        task_t *next = current->next;
+
+        // 从睡眠队列移除
+        remove_from_sleep_queue(current);
+
+        // 添加到就绪队列
+        scheduler_add_task(current);
+
+        logger_debug("Woke up task '%s' (slept until tick %llu, current tick %llu)\n",
+                     current->name,
+                     current->sleep_until_ticks,
+                     current_tick);
+
+        current = next;
+    }
+}
+
+// 任务睡眠函数
+void
+task_sleep(uint32_t ms)
+{
+    uint32_t cpu_id = get_current_cpu_id();
+    if (cpu_id >= T_SMP_NUM)
+        return;
+
+    cpu_scheduler_t *scheduler = &g_task_manager.schedulers[cpu_id];
+    task_t          *current   = scheduler->current_task;
+
+    if (!current || current == scheduler->idle_task) {
+        logger_warn("Cannot sleep: no current task or idle task\n");
+        return;
+    }
+
+    // 计算唤醒时间（当前tick + 睡眠时间对应的tick数）
+    uint64_t sleep_ticks       = (ms * TIMER_FREQUENCY_HZ) / 1000;
+    uint64_t current_tick      = timer_get_system_ticks();
+    current->sleep_until_ticks = current_tick + sleep_ticks;
+
+    logger_info("Task '%s' sleeping for %u ms (until tick %llu)\n",
+                current->name,
+                ms,
+                current->sleep_until_ticks);
+
+    // 添加到睡眠队列
+    add_to_sleep_queue(current);
+
+    // 选择下一个任务运行
+    task_t *next = get_next_task(cpu_id);
+    if (!next) {
+        next = scheduler->idle_task;
+    }
+
+    if (next && next != current) {
+        // 从就绪队列移除下一个任务（如果不是idle任务）
+        if (next != scheduler->idle_task) {
+            scheduler_remove_task(next);
+        }
+
+        next->state           = TASK_RUNNING;
+        next->remaining_ticks = next->time_slice;
+        next->last_scheduled  = timer_get_system_ticks();
+
+        scheduler->current_task = next;
+        scheduler->total_switches++;
+
+        logger_debug("CPU %u: Switching from sleeping '%s' to '%s'\n",
+                     cpu_id,
+                     current->name,
+                     next->name);
+
+        // 执行上下文切换
+        task_switch_context(&current->context, &next->context);
+    } else {
+        logger_warn("No task available after sleep, staying with current\n");
     }
 }

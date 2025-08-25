@@ -11,6 +11,7 @@ typedef enum
     TASK_READY = 0,  // 就绪状态
     TASK_RUNNING,    // 运行状态
     TASK_BLOCKED,    // 阻塞状态
+    TASK_SLEEPING,   // 睡眠状态
     TASK_TERMINATED  // 终止状态
 } task_state_t;
 
@@ -52,6 +53,9 @@ typedef struct task
     uint64_t total_runtime;    // 总运行时间
     uint64_t last_scheduled;   // 上次调度时间
 
+    // 睡眠信息
+    uint64_t sleep_until_ticks;  // 睡眠到指定的系统tick数
+
     // 链表节点
     struct task *next;  // 下一个任务
     struct task *prev;  // 上一个任务
@@ -72,6 +76,10 @@ typedef struct cpu_scheduler
     task_t  *ready_queue_head;  // 就绪队列头
     task_t  *ready_queue_tail;  // 就绪队列尾
     uint32_t ready_count;       // 就绪队列中的任务数
+
+    // 睡眠队列（按唤醒时间排序的链表）
+    task_t  *sleep_queue_head;  // 睡眠队列头
+    uint32_t sleep_count;       // 睡眠队列中的任务数
 
     // 统计信息
     uint64_t total_switches;  // 总切换次数
@@ -107,6 +115,8 @@ void
 task_exit(void);
 void
 task_yield(void);
+void
+task_sleep(uint32_t ms);
 task_t *
 task_get_current(void);
 uint32_t
@@ -123,6 +133,8 @@ void
 scheduler_add_task(task_t *task);
 void
 scheduler_remove_task(task_t *task);
+void
+wake_up_sleeping_tasks(uint32_t cpu_id);
 
 // 上下文切换函数（汇编实现）
 extern void
