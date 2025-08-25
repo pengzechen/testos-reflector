@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "t_types.h": "c",
+        "t_uart.h": "c",
+        "t_cfg.h": "c",
+        "t_sysreg.h": "c",
+        "simplebash.h": "c",
+        "t_spinlock.h": "c",
+        "t_timer.h": "c",
+        "t_string.h": "c",
+        "t_task.h": "c",
+        "t_exception.h": "c",
+        "t_logger.h": "c"
+    }
+}

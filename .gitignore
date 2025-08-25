@@ -1,0 +1,110 @@
+# Build directories
+build/
+bin/
+obj/
+out/
+
+# Compiled object files
+*.o
+*.obj
+*.elf
+*.bin
+*.img
+*.iso
+
+# Linker output
+*.map
+*.lst
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel/OS specific
+*.kernel
+*.vmlinux
+*.bzImage
+
+# VSCode temporary and cache files
+.vscode/*.log
+.vscode/ipch/
+.vscode/.browse.c_cpp.db*
+.vscode/browse.vc.db
+.vscode/.cache/
+.vscode/compileCommands_*
+
+# Keep important VSCode configuration files:
+# .vscode/launch.json (debugging configuration)
+# .vscode/c_cpp_properties.json (C++ IntelliSense configuration)
+# .vscode/settings.json (workspace settings)
+# .vscode/tasks.json (build tasks)
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Core dumps
+core
+core.*
+
+# GDB files
+.gdb_history
+peda-session-*.txt
+
+# QEMU files
+*.qcow2
+*.img
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# IDE files
+.idea/
+*.sublime-*
+*.code-workspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Dependency directories
+node_modules/
+
+# Archives
+*.zip
+*.tar.gz
+*.tar.bz2
+*.rar
+*.7z
+
+# Documentation build
+docs/_build/
+docs/html/
+docs/latex/
+
+# Test coverage
+*.gcov
+*.gcda
+*.gcno
+coverage/
+
+# Static analysis
+cppcheck-result.xml
+scan-build-*/

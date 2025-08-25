@@ -1,0 +1,15 @@
+{
+    "configurations": [
+        {
+            "name": "TestOS",
+            "includePath": [
+                "${workspaceFolder}/include/**",
+                "${workspaceFolder}/src/**"
+            ],
+            "defines": [
+                "__LOAD_ADDR__=0x40080000"
+            ],
+        }
+    ],
+    "version": 4
+}
