@@ -11,6 +11,8 @@ scheduler_tick(uint32_t cpu_id);
 
 // 调度标志位（在exception模块中定义）
 extern volatile int need_schedule_flag;
+// 检查并唤醒到期的睡眠任务
+extern void wake_up_sleeping_tasks(uint32_t cpu_id);
 
 // 全局变量
 volatile uint64_t g_system_ticks    = 0;
@@ -91,9 +93,6 @@ timer_handler(uint64_t *stack_pointer)
 {
     (void) stack_pointer;  // Suppress unused parameter warning
 
-    // 立即输出，确保我们能看到中断被调用
-    // uart_putstr("[TIMER_IRQ] ");
-
     // 更新系统tick计数
     g_system_ticks++;
 
@@ -108,8 +107,6 @@ timer_handler(uint64_t *stack_pointer)
     uint32_t current_cpu = get_current_cpu_id();
     scheduler_tick(current_cpu);
 
-    // 检查并唤醒到期的睡眠任务
-    extern void wake_up_sleeping_tasks(uint32_t cpu_id);
     wake_up_sleeping_tasks(current_cpu);
 
     // 设置调度标志位，延迟到中断处理完成后再调度
@@ -121,17 +118,17 @@ timer_handler(uint64_t *stack_pointer)
 
     // 每100个tick打印一次信息（每1秒，因为100Hz）
     if (g_system_ticks % TIMER_FREQUENCY_HZ == 0) {
-        logger_info("Timer: %llu seconds, %llu ticks, %llu interrupts\n",
-                    g_system_ticks / TIMER_FREQUENCY_HZ,
-                    g_system_ticks,
-                    g_timer_stats.total_interrupts);
+        // logger_info("Timer: %llu seconds, %llu ticks, %llu interrupts\n",
+        //             g_system_ticks / TIMER_FREQUENCY_HZ,
+        //             g_system_ticks,
+        //             g_timer_stats.total_interrupts);
     }
 
     // 前几个中断打印调试信息
     if (g_system_ticks <= 10) {
-        logger_info("Timer interrupt #%llu: uptime=%llu ms\n",
-                    g_system_ticks,
-                    timer_get_uptime_ms());
+        // logger_info("Timer interrupt #%llu: uptime=%llu ms\n",
+        //             g_system_ticks,
+        //             timer_get_uptime_ms());
     }
 }
 

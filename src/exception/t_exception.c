@@ -8,8 +8,6 @@
 
 irq_handler_t g_handler_vec[512] = {0};
 
-uint64_t print_flag = 0;
-
 // 调度标志位，用于延迟调度
 volatile int need_schedule_flag = 0;
 
@@ -43,8 +41,9 @@ handle_sync_exception(uint64_t *stack_pointer)
 
     logger("usp: %x, elr: %x, spsr: %x\n", usp_value, elr_el1_value, spsr_value);
 
+    logger_warn("wfi");
     while (1)
-        ;
+        WFI();
 }
 
 void
@@ -83,11 +82,10 @@ handle_irq_exception(uint64_t *stack_pointer)
 void
 invalid_exception(uint64_t *stack_pointer, uint64_t kind, uint64_t source)
 {
-    trap_frame_t *el1_ctx = (trap_frame_t *) stack_pointer;
+    trap_frame_t *el1_ctx  = (trap_frame_t *) stack_pointer;
+    uint64_t      x0_value = el1_ctx->r[0];
 
-    uint64_t x2_value = el1_ctx->r[2];
-
-    (void) x2_value;
+    (void) x0_value;
     (void) kind;
     (void) source;
 }

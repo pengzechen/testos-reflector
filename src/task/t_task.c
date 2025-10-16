@@ -263,7 +263,7 @@ scheduler_add_task(task_t *task)
 
     scheduler->ready_count++;
 
-    logger_debug("Added task '%s' to ready queue on CPU %u\n", task->name, cpu_id);
+    // logger_debug("Added task '%s' to ready queue on CPU %u\n", task->name, cpu_id);
 }
 
 // 从就绪队列移除任务
@@ -307,7 +307,7 @@ scheduler_remove_task(task_t *task)
     task->prev = NULL;
     scheduler->ready_count--;
 
-    logger_debug("Removed task '%s' from ready queue on CPU %u\n", task->name, cpu_id);
+    // logger_debug("Removed task '%s' from ready queue on CPU %u\n", task->name, cpu_id);
 }
 
 // 获取下一个要运行的任务
@@ -388,9 +388,9 @@ scheduler_schedule(uint32_t cpu_id)
 
     // 执行上下文切换
     if (old_task != next) {
-        logger_debug("About to switch context from %s to %s\n",
-                     old_task ? old_task->name : "none",
-                     next->name);
+        // logger_debug("About to switch context from %s to %s\n",
+        //              old_task ? old_task->name : "none",
+        //              next->name);
 
         // 统一使用上下文切换机制，无论是否为第一次运行
         task_switch_context(old_task ? &old_task->context : NULL, &next->context);
@@ -497,7 +497,7 @@ task_yield(void)
     task_t          *current   = scheduler->current_task;
 
     if (current && current != scheduler->idle_task) {
-        logger_debug("Task '%s' yielding CPU\n", current->name);
+        // logger_debug("Task '%s' yielding CPU\n", current->name);
 
         // 将当前任务放回就绪队列
         current->state           = TASK_READY;
@@ -519,7 +519,7 @@ task_yield(void)
             scheduler->current_task = next;
             scheduler->total_switches++;
 
-            logger_debug("CPU %u: Yielding from '%s' to '%s'\n", cpu_id, current->name, next->name);
+            // logger_debug("CPU %u: Yielding from '%s' to '%s'\n", cpu_id, current->name, next->name);
 
             // 执行上下文切换
             task_switch_context(&current->context, &next->context);
@@ -674,9 +674,9 @@ add_to_sleep_queue(task_t *task)
     }
 
     scheduler->sleep_count++;
-    logger_debug("Added task '%s' to sleep queue (wake at tick %llu)\n",
-                 task->name,
-                 task->sleep_until_ticks);
+    // logger_debug("Added task '%s' to sleep queue (wake at tick %llu)\n",
+    //              task->name,
+    //              task->sleep_until_ticks);
 }
 
 // 从睡眠队列中移除任务
@@ -708,7 +708,7 @@ remove_from_sleep_queue(task_t *task)
     task->prev = NULL;
     scheduler->sleep_count--;
 
-    logger_debug("Removed task '%s' from sleep queue\n", task->name);
+    // logger_debug("Removed task '%s' from sleep queue\n", task->name);
 }
 
 // 检查并唤醒到期的睡眠任务
@@ -731,10 +731,10 @@ wake_up_sleeping_tasks(uint32_t cpu_id)
         // 添加到就绪队列
         scheduler_add_task(current);
 
-        logger_debug("Woke up task '%s' (slept until tick %llu, current tick %llu)\n",
-                     current->name,
-                     current->sleep_until_ticks,
-                     current_tick);
+        // logger_debug("Woke up task '%s' (slept until tick %llu, current tick %llu)\n",
+        //              current->name,
+        //              current->sleep_until_ticks,
+        //              current_tick);
 
         current = next;
     }
@@ -761,10 +761,10 @@ task_sleep(uint32_t ms)
     uint64_t current_tick      = timer_get_system_ticks();
     current->sleep_until_ticks = current_tick + sleep_ticks;
 
-    logger_info("Task '%s' sleeping for %u ms (until tick %llu)\n",
-                current->name,
-                ms,
-                current->sleep_until_ticks);
+    // logger_info("Task '%s' sleeping for %u ms (until tick %llu)\n",
+    //             current->name,
+    //             ms,
+    //             current->sleep_until_ticks);
 
     // 添加到睡眠队列
     add_to_sleep_queue(current);
@@ -788,10 +788,10 @@ task_sleep(uint32_t ms)
         scheduler->current_task = next;
         scheduler->total_switches++;
 
-        logger_debug("CPU %u: Switching from sleeping '%s' to '%s'\n",
-                     cpu_id,
-                     current->name,
-                     next->name);
+        // logger_debug("CPU %u: Switching from sleeping '%s' to '%s'\n",
+        //              cpu_id,
+        //              current->name,
+        //              next->name);
 
         // 执行上下文切换
         task_switch_context(&current->context, &next->context);

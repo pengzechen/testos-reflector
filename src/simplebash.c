@@ -9,6 +9,8 @@
 #include "t_uart.h"
 #include "lib/t_string.h"
 #include "lib/t_logger.h"
+#include "t_task.h"
+#include "t_timer.h"
 
 #define MAX_CMD_LEN 256
 #define MAX_ARGS    16
@@ -45,6 +47,8 @@ static void
 cmd_info(void);
 static void
 cmd_uart_status(void);
+static void
+cmd_ps(void);
 
 // Command structure
 typedef struct
@@ -61,6 +65,7 @@ static const shell_command_t commands[] = {
     {"clear", cmd_clear, "Clear screen"},
     {"info", cmd_info, "Show system information"},
     {"uart", cmd_uart_status, "Show UART status"},
+    {"ps", cmd_ps, "Show running processes"},
     {NULL, NULL, NULL}  // Terminator
 };
 
@@ -285,5 +290,151 @@ cmd_uart_status(void)
 
     uart_putstr("  RX Available: ");
     uart_putstr(uart_rx_available() ? "Yes" : "No");
+    uart_putstr("\r\n");
+}
+
+// 辅助函数：将数字转换为字符串
+static void
+uint_to_str(uint32_t num, char *str, int width)
+{
+    char temp[16];
+    int  i = 0;
+
+    if (num == 0) {
+        temp[i++] = '0';
+    } else {
+        while (num > 0) {
+            temp[i++] = '0' + (num % 10);
+            num /= 10;
+        }
+    }
+
+    // 反转字符串
+    int j = 0;
+    while (j < width - i) {
+        str[j++] = ' ';  // 右对齐，左边填空格
+    }
+    while (i > 0) {
+        str[j++] = temp[--i];
+    }
+    str[j] = '\0';
+}
+
+// 辅助函数：将64位数字转换为字符串
+static void
+uint64_to_str(uint64_t num, char *str, int width)
+{
+    char temp[32];
+    int  i = 0;
+
+    if (num == 0) {
+        temp[i++] = '0';
+    } else {
+        while (num > 0) {
+            temp[i++] = '0' + (num % 10);
+            num /= 10;
+        }
+    }
+
+    // 反转字符串
+    int j = 0;
+    while (j < width - i) {
+        str[j++] = ' ';  // 右对齐，左边填空格
+    }
+    while (i > 0) {
+        str[j++] = temp[--i];
+    }
+    str[j] = '\0';
+}
+
+// 辅助函数：获取任务状态字符串
+static const char *
+get_task_state_str(task_state_t state)
+{
+    switch (state) {
+        case TASK_READY:      return "READY";
+        case TASK_RUNNING:    return "RUN  ";
+        case TASK_BLOCKED:    return "BLOCK";
+        case TASK_SLEEPING:   return "SLEEP";
+        case TASK_TERMINATED: return "TERM ";
+        default:              return "UNK  ";
+    }
+}
+
+// ps 命令实现
+static void
+cmd_ps(void)
+{
+    extern task_manager_t g_task_manager;
+
+    uart_putstr("Process Status:\r\n");
+    uart_putstr("PID  NAME         STATE CPU  TIME(ms) SLICE SLEEP_UNTIL\r\n");
+    uart_putstr("---- ------------ ----- --- -------- ----- -----------\r\n");
+
+    uint64_t current_tick = timer_get_system_ticks();
+
+    // 遍历所有任务
+    for (int i = 0; i < MAX_TOTAL_TASKS; i++) {
+        if (g_task_manager.task_used[i]) {
+            task_t *task = &g_task_manager.task_pool[i];
+
+            char pid_str[8];
+            char cpu_str[8];
+            char time_str[16];
+            char slice_str[8];
+            char sleep_str[16];
+
+            // 格式化各个字段
+            uint_to_str(task->task_id, pid_str, 4);
+            uint_to_str(task->cpu_id, cpu_str, 3);
+            uint64_to_str(task->total_runtime * 10, time_str, 8);  // 转换为毫秒
+            uint_to_str(task->remaining_ticks, slice_str, 5);
+
+            if (task->state == TASK_SLEEPING) {
+                uint64_to_str(task->sleep_until_ticks, sleep_str, 11);
+            } else {
+                strcpy(sleep_str, "           ");  // 11个空格
+            }
+
+            // 输出任务信息
+            uart_putstr(pid_str);
+            uart_putstr(" ");
+
+            // 任务名称（最多12个字符，左对齐）
+            char name_padded[16];
+            strncpy(name_padded, task->name, 12);
+            name_padded[12] = '\0';
+            int name_len = strlen(name_padded);
+            uart_putstr(name_padded);
+            for (int j = name_len; j < 12; j++) {
+                uart_putchar(' ');
+            }
+            uart_putstr(" ");
+
+            uart_putstr(get_task_state_str(task->state));
+            uart_putstr(" ");
+            uart_putstr(cpu_str);
+            uart_putstr(" ");
+            uart_putstr(time_str);
+            uart_putstr(" ");
+            uart_putstr(slice_str);
+            uart_putstr(" ");
+            uart_putstr(sleep_str);
+            uart_putstr("\r\n");
+        }
+    }
+
+    // 显示当前系统信息
+    uart_putstr("\r\nSystem Info:\r\n");
+    char tick_str[16];
+    uint64_to_str(current_tick, tick_str, 10);
+    uart_putstr("Current Tick: ");
+    uart_putstr(tick_str);
+    uart_putstr("\r\n");
+
+    char uptime_str[16];
+    uint64_to_str(current_tick * 10, uptime_str, 10);  // 转换为毫秒
+    uart_putstr("Uptime (ms):  ");
+    uart_putstr(uptime_str);
     uart_putstr("\r\n");
 }

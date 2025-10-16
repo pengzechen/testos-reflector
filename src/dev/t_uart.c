@@ -26,7 +26,7 @@ typedef struct
     volatile uint32_t head;
     volatile uint32_t tail;
     volatile uint32_t count;
-    spinlock_t        lock;
+    spinlock_irq_t        lock;
 } uart_buffer_t;
 
 static uart_buffer_t tx_buffer        = {0};
@@ -117,7 +117,7 @@ uart_interrupt_handler(uint64_t *stack_pointer)
 
     // Handle transmit interrupt
     if (mis & UART_INT_TX) {
-        spin_lock(&tx_buffer.lock);
+        spin_lock_irqsave(&tx_buffer.lock);
 
         // Send as many characters as possible
         while (!uart_tx_fifo_full() && !buffer_is_empty(&tx_buffer)) {
@@ -132,7 +132,7 @@ uart_interrupt_handler(uint64_t *stack_pointer)
             uart_disable_tx_interrupt();
         }
 
-        spin_unlock(&tx_buffer.lock);
+        spin_unlock_irqrestore(&tx_buffer.lock);
 
         // Clear TX interrupt
         write32(UART_INT_TX, (void *) UART_ICR);
@@ -140,7 +140,7 @@ uart_interrupt_handler(uint64_t *stack_pointer)
 
     // Handle receive interrupt
     if (mis & (UART_INT_RX | UART_INT_RT)) {
-        spin_lock(&rx_buffer.lock);
+        spin_lock_irqsave(&rx_buffer.lock);
 
         // Read all available characters
         while (!uart_rx_fifo_empty()) {
@@ -151,7 +151,7 @@ uart_interrupt_handler(uint64_t *stack_pointer)
             // If buffer is full, we drop the character
         }
 
-        spin_unlock(&rx_buffer.lock);
+        spin_unlock_irqrestore(&rx_buffer.lock);
 
         // Clear RX interrupts
         write32(UART_INT_RX | UART_INT_RT, (void *) UART_ICR);
@@ -168,8 +168,8 @@ uart_init(void)
     }
 
     // Initialize buffers
-    spinlock_init(&tx_buffer.lock);
-    spinlock_init(&rx_buffer.lock);
+    spinlock_irq_init(&tx_buffer.lock);
+    spinlock_irq_init(&rx_buffer.lock);
     tx_buffer.head = tx_buffer.tail = tx_buffer.count = 0;
     rx_buffer.head = rx_buffer.tail = rx_buffer.count = 0;
 
@@ -213,7 +213,7 @@ uart_putchar_nb(char c)
         return false;
     }
 
-    spin_lock(&tx_buffer.lock);
+    spin_lock_irqsave(&tx_buffer.lock);
 
     bool success = false;
 
@@ -230,7 +230,7 @@ uart_putchar_nb(char c)
         }
     }
 
-    spin_unlock(&tx_buffer.lock);
+    spin_unlock_irqrestore(&tx_buffer.lock);
     return success;
 }
 
@@ -286,9 +286,9 @@ uart_flush(void)
     // Wait for TX buffer to empty
     int timeout = 100000;
     while (timeout-- > 0) {
-        spin_lock(&tx_buffer.lock);
+        spin_lock_irqsave(&tx_buffer.lock);
         bool empty = (tx_buffer.head == tx_buffer.tail);
-        spin_unlock(&tx_buffer.lock);
+        spin_unlock_irqrestore(&tx_buffer.lock);
 
         if (empty) {
             break;
@@ -320,9 +320,9 @@ uart_getchar_nb(char *c)
         return false;
     }
 
-    spin_lock(&rx_buffer.lock);
+    spin_lock_irqsave(&rx_buffer.lock);
     bool success = buffer_get(&rx_buffer, c);
-    spin_unlock(&rx_buffer.lock);
+    spin_unlock_irqrestore(&rx_buffer.lock);
 
     return success;
 }
@@ -335,9 +335,9 @@ uart_rx_available(void)
         return false;
     }
 
-    spin_lock(&rx_buffer.lock);
+    spin_lock_irqsave(&rx_buffer.lock);
     bool available = !buffer_is_empty(&rx_buffer);
-    spin_unlock(&rx_buffer.lock);
+    spin_unlock_irqrestore(&rx_buffer.lock);
 
     return available;
 }
@@ -350,9 +350,9 @@ uart_tx_buffer_usage(void)
         return 0;
     }
 
-    spin_lock(&tx_buffer.lock);
+    spin_lock_irqsave(&tx_buffer.lock);
     uint32_t usage = tx_buffer.count;
-    spin_unlock(&tx_buffer.lock);
+    spin_unlock_irqrestore(&tx_buffer.lock);
 
     return usage;
 }
