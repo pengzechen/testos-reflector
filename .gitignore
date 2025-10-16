@@ -4,6 +4,9 @@ bin/
 obj/
 out/
 
+tools/
+*.uimg
+
 # Compiled object files
 *.o
 *.obj

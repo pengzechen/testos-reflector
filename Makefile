@@ -16,11 +16,11 @@ BUILD_DIR = build
 
 # 编译标志
 CFLAGS = -g -O0 -Wall -nostdlib -nostartfiles -ffreestanding -mgeneral-regs-only
-CFLAGS += -I$(INCLUDE_DIR) -D__LOAD_ADDR__=0x40080000
-ASFLAGS = -g -O0 -Wall -I$(INCLUDE_DIR) -D__LOAD_ADDR__=0x40080000
+CFLAGS += -I$(INCLUDE_DIR) -D__LOAD_ADDR__=0x400000
+ASFLAGS = -g -O0 -Wall -I$(INCLUDE_DIR) -D__LOAD_ADDR__=0x400000
 
 # 链接标志
-LDFLAGS = -T src/boot/t_link.lds --defsym=__LOAD_ADDR__=0x40080000
+LDFLAGS = -T src/boot/t_link.lds --defsym=__LOAD_ADDR__=0x400000
 
 # 源文件
 C_SOURCES = $(shell find $(SRC_DIR) -name "*.c")
@@ -66,15 +66,18 @@ $(BIN_TARGET): $(ELF_TARGET)
 
 # 反汇编
 disasm: $(ELF_TARGET)
-	$(OBJDUMP) -d $< > $(BUILD_DIR)/$(PROJECT_NAME).disasm
+	$(OBJDUMP) -x -d -S $< > $(BUILD_DIR)/$(PROJECT_NAME).disasm
 
 # 运行QEMU
 qemu: $(BIN_TARGET)
-	qemu-system-aarch64 -machine virt -cpu cortex-a53 -kernel $< -nographic
+	qemu-system-aarch64 -machine virt,gic-version=3 -cpu cortex-a53 -kernel $< -nographic
 
 # 调试模式运行QEMU
 qemu-debug: $(BIN_TARGET)
-	qemu-system-aarch64 -machine virt -cpu cortex-a53 -kernel $< -nographic -s -S
+	qemu-system-aarch64 -machine virt,gic-version=3 -cpu cortex-a53 -kernel $< -nographic -s -S
+
+uimg: $(BIN_TARGET)
+	mkimage -A arm64 -O linux -T kernel -C none -a 0x400000 -e 0x400000 -n "testos Kernel" -d build/testos.bin testos-reflector_aarch64-opi5p.uimg 
 
 # 清理
 clean:

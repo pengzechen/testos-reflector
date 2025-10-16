@@ -1,6 +1,6 @@
 #include "t_timer.h"
 #include "t_mmio.h"
-#include "t_gicv2.h"
+#include "t_gicv3.h"
 #include "lib/t_logger.h"
 
 #include "t_exception.h"
@@ -38,10 +38,10 @@ timer_init(void)
     timer_reset_stats();
 
     // 安装中断回调函数
-    irq_install(CNTV_TIMER, timer_handler);
+    irq_install(CNTP_TIMER, timer_handler);
 
     // 在GIC中启用定时器中断
-    gic_enable_int(CNTV_TIMER, true);
+    gicv3_enable_int(CNTP_TIMER, true);
 
     logger_info("Timer initialized successfully\n");
 }
@@ -54,10 +54,10 @@ timer_enable(void)
     uint64_t ticks_per_interrupt = g_timer_frequency / TIMER_FREQUENCY_HZ;
 
     // 设置定时器值
-    CNTV_TVAL_EL0_WRITE(ticks_per_interrupt);
+    CNTP_TVAL_EL0_WRITE(ticks_per_interrupt);
 
     // 启用定时器，不屏蔽中断
-    CNTV_CTL_EL0_WRITE(CNTV_CTL_ENABLE);
+    CNTP_CTL_EL0_WRITE(CNTV_CTL_ENABLE);
 
     logger_info("Timer enabled with %llu ticks per interrupt\n", ticks_per_interrupt);
 }
@@ -67,7 +67,7 @@ void
 timer_disable(void)
 {
     // 禁用定时器并屏蔽中断
-    CNTV_CTL_EL0_WRITE(CNTV_CTL_IMASK);
+    CNTP_CTL_EL0_WRITE(CNTV_CTL_IMASK);
 
     logger_info("Timer disabled\n");
 }
@@ -76,8 +76,11 @@ timer_disable(void)
 void
 timer_set_next_interrupt(uint64_t ticks_from_now)
 {
-    CNTV_TVAL_EL0_WRITE(ticks_from_now);
+    CNTP_TVAL_EL0_WRITE(ticks_from_now);
 }
+
+
+
 
 // 调度下一个tick
 void
@@ -92,6 +95,8 @@ void
 timer_handler(uint64_t *stack_pointer)
 {
     (void) stack_pointer;  // Suppress unused parameter warning
+
+    logger_info("Timer interrupt handler invoked\n");
 
     // 更新系统tick计数
     g_system_ticks++;
@@ -158,11 +163,11 @@ timer_get_frequency(void)
 void
 timer_delay_ms(uint32_t ms)
 {
-    uint64_t start_time  = CNTVCT_EL0_READ();
+    uint64_t start_time  = CNTPCT_EL0_READ();
     uint64_t delay_ticks = (g_timer_frequency * ms) / 1000;
     uint64_t target_time = start_time + delay_ticks;
 
-    while (CNTVCT_EL0_READ() < target_time) {
+    while (CNTPCT_EL0_READ() < target_time) {
         asm volatile("nop");
     }
 }
@@ -171,11 +176,11 @@ timer_delay_ms(uint32_t ms)
 void
 timer_delay_us(uint32_t us)
 {
-    uint64_t start_time  = CNTVCT_EL0_READ();
+    uint64_t start_time  = CNTPCT_EL0_READ();
     uint64_t delay_ticks = (g_timer_frequency * us) / 1000000;
     uint64_t target_time = start_time + delay_ticks;
 
-    while (CNTVCT_EL0_READ() < target_time) {
+    while (CNTPCT_EL0_READ() < target_time) {
         asm volatile("nop");
     }
 }
@@ -210,8 +215,8 @@ timer_reset_stats(void)
 void
 timer_dump_info(void)
 {
-    uint64_t current_time = CNTVCT_EL0_READ();
-    uint32_t ctl_reg      = CNTV_CTL_EL0_READ();
+    uint64_t current_time = CNTPCT_EL0_READ();
+    uint32_t ctl_reg      = CNTP_CTL_EL0_READ();
 
     logger_info("Timer Information:\n");
     logger_info("  Frequency: %llu Hz\n", g_timer_frequency);

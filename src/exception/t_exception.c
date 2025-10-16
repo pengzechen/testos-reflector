@@ -1,7 +1,7 @@
 
 #include "t_types.h"
 #include "t_exception.h"
-#include "t_gicv2.h"
+#include "t_gicv3.h"
 #include "cfg/t_cfg.h"
 #include "t_timer.h"
 #include "lib/t_logger.h"
@@ -56,8 +56,8 @@ handle_irq_exception(uint64_t *stack_pointer)
     (void) x1_value;
     (void) sp_el0_value;
 
-    uint32_t iar    = gic_read_iar();
-    uint32_t vector = gic_iar_irqnr(iar);
+    uint32_t iar    = gicv3_read_iar();
+    uint32_t vector = gicv3_iar_irqnr(iar);
 
     // 调用中断处理函数
     if (g_handler_vec[vector] != NULL) {
@@ -65,8 +65,8 @@ handle_irq_exception(uint64_t *stack_pointer)
     }
 
     // 先完成中断确认，确保GIC知道中断已处理完毕
-    gic_write_eoir(iar);
-    gic_write_dir(iar);
+    gicv3_write_eoir(iar);
+    // gicv3_write_dir(iar);
 
     // 检查是否需要调度
     if (need_schedule_flag) {

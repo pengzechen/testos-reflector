@@ -146,6 +146,13 @@ get_current_el(void)
         val;                                                                                       \
     })
 
+#define READ_CNTPCT_EL0()                                                                          \
+    ({                                                                                             \
+        uint64_t val;                                                                              \
+        __asm__ __volatile__("mrs %0, cntpct_el0" : "=r"(val));                                    \
+        val;                                                                                       \
+    })
+
 // CNTV_CTL_EL0 - Counter-timer Virtual Timer Control Register
 #define READ_CNTV_CTL_EL0()                                                                        \
     ({                                                                                             \
@@ -154,7 +161,16 @@ get_current_el(void)
         val;                                                                                       \
     })
 
+#define READ_CNTP_CTL_EL0()                                                                        \
+    ({                                                                                             \
+        uint64_t val;                                                                              \
+        __asm__ __volatile__("mrs %0, cntp_ctl_el0" : "=r"(val));                                  \
+        val;                                                                                       \
+    })
+
 #define WRITE_CNTV_CTL_EL0(val) __asm__ __volatile__("msr cntv_ctl_el0, %0" : : "r"(val))
+
+#define WRITE_CNTP_CTL_EL0(val) __asm__ __volatile__("msr cntp_ctl_el0, %0" : : "r"(val))
 
 // CNTV_TVAL_EL0 - Counter-timer Virtual Timer TimerValue Register
 #define READ_CNTV_TVAL_EL0()                                                                       \

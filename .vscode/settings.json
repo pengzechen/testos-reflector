@@ -10,6 +10,11 @@
         "t_string.h": "c",
         "t_task.h": "c",
         "t_exception.h": "c",
-        "t_logger.h": "c"
+        "t_logger.h": "c",
+        "t_mmio.h": "c",
+        "t_gicv2.h": "c",
+        "*.bak": "c",
+        "t_gicv3.h": "c",
+        "t_dw_uart.h": "c"
     }
 }

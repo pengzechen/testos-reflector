@@ -6,7 +6,7 @@
  */
 
 #include "t_types.h"
-#include "t_uart.h"
+#include "t_dw_uart.h"
 #include "lib/t_string.h"
 #include "lib/t_logger.h"
 #include "t_task.h"
@@ -74,11 +74,11 @@ void
 simplebash_init(void)
 {
     shell_clear_buffer();
-    uart_putstr("\r\n");
-    uart_putstr("=================================\r\n");
-    uart_putstr("  TestOS Simple Bash v1.0\r\n");
-    uart_putstr("  Type 'help' for commands\r\n");
-    uart_putstr("=================================\r\n");
+    dw_uart_putstr("\r\n");
+    dw_uart_putstr("=================================\r\n");
+    dw_uart_putstr("  TestOS Simple Bash v1.0\r\n");
+    dw_uart_putstr("  Type 'help' for commands\r\n");
+    dw_uart_putstr("=================================\r\n");
     shell_print_prompt();
 }
 
@@ -89,7 +89,7 @@ simplebash_run(void)
     char c;
 
     // Check for incoming characters
-    while (uart_getchar_nb(&c)) {
+    while (dw_uart_getchar_nb(&c)) {
         shell_process_char(c);
     }
 }
@@ -98,8 +98,8 @@ simplebash_run(void)
 static void
 shell_print_prompt(void)
 {
-    uart_putstr(prompt);
-    uart_flush();
+    dw_uart_putstr(prompt);
+    dw_uart_flush();
 }
 
 // Process incoming character
@@ -109,7 +109,7 @@ shell_process_char(char c)
     switch (c) {
         case '\r':  // Carriage return
         case '\n':  // Line feed
-            uart_putstr("\r\n");
+            dw_uart_putstr("\r\n");
             if (cmd_pos > 0) {
                 cmd_buffer[cmd_pos] = '\0';
                 shell_execute_command();
@@ -122,12 +122,12 @@ shell_process_char(char c)
         case 0x7F:  // DEL
             if (cmd_pos > 0) {
                 cmd_pos--;
-                uart_putstr("\b \b");  // Backspace, space, backspace
+                dw_uart_putstr("\b \b");  // Backspace, space, backspace
             }
             break;
 
         case 0x03:  // Ctrl+C
-            uart_putstr("^C\r\n");
+            dw_uart_putstr("^C\r\n");
             shell_clear_buffer();
             shell_print_prompt();
             break;
@@ -136,7 +136,7 @@ shell_process_char(char c)
             // Regular character
             if (c >= 32 && c <= 126 && cmd_pos < MAX_CMD_LEN - 1) {
                 cmd_buffer[cmd_pos++] = c;
-                uart_putchar(c);  // Echo character
+                dw_uart_putchar(c);  // Echo character
             }
             break;
     }
@@ -206,22 +206,22 @@ shell_execute_command(void)
     }
 
     // Command not found
-    uart_putstr("Command not found: ");
-    uart_putstr(args[0]);
-    uart_putstr("\r\nType 'help' for available commands.\r\n");
+    dw_uart_putstr("Command not found: ");
+    dw_uart_putstr(args[0]);
+    dw_uart_putstr("\r\nType 'help' for available commands.\r\n");
 }
 
 // Built-in command implementations
 static void
 cmd_help(void)
 {
-    uart_putstr("Available commands:\r\n");
+    dw_uart_putstr("Available commands:\r\n");
     for (int i = 0; commands[i].name != NULL; i++) {
-        uart_putstr("  ");
-        uart_putstr(commands[i].name);
-        uart_putstr(" - ");
-        uart_putstr(commands[i].description);
-        uart_putstr("\r\n");
+        dw_uart_putstr("  ");
+        dw_uart_putstr(commands[i].name);
+        dw_uart_putstr(" - ");
+        dw_uart_putstr(commands[i].description);
+        dw_uart_putstr("\r\n");
     }
 }
 
@@ -230,39 +230,39 @@ cmd_echo(void)
 {
     for (int i = 1; i < arg_count; i++) {
         if (i > 1) {
-            uart_putchar(' ');
+            dw_uart_putchar(' ');
         }
-        uart_putstr(args[i]);
+        dw_uart_putstr(args[i]);
     }
-    uart_putstr("\r\n");
+    dw_uart_putstr("\r\n");
 }
 
 static void
 cmd_clear(void)
 {
     // Send ANSI escape sequence to clear screen
-    uart_putstr("\033[2J\033[H");
-    uart_putstr("TestOS Simple Bash v1.0\r\n");
+    dw_uart_putstr("\033[2J\033[H");
+    dw_uart_putstr("TestOS Simple Bash v1.0\r\n");
 }
 
 static void
 cmd_info(void)
 {
-    uart_putstr("TestOS System Information:\r\n");
-    uart_putstr("  OS: TestOS\r\n");
-    uart_putstr("  Architecture: ARM64\r\n");
-    uart_putstr("  Shell: Simple Bash v1.0\r\n");
-    uart_putstr("  UART: PL011 with interrupt support\r\n");
+    dw_uart_putstr("TestOS System Information:\r\n");
+    dw_uart_putstr("  OS: TestOS\r\n");
+    dw_uart_putstr("  Architecture: ARM64\r\n");
+    dw_uart_putstr("  Shell: Simple Bash v1.0\r\n");
+    dw_uart_putstr("  UART: PL011 with interrupt support\r\n");
 }
 
 static void
 cmd_uart_status(void)
 {
-    uart_putstr("UART Status:\r\n");
-    uart_putstr("  TX Buffer Usage: ");
+    dw_uart_putstr("UART Status:\r\n");
+    dw_uart_putstr("  TX Buffer Usage: ");
 
     // Convert buffer usage to string (simple implementation)
-    uint32_t usage = uart_tx_buffer_usage();
+    uint32_t usage = dw_uart_tx_buffer_usage();
     char     num_str[16];
     int      pos = 0;
 
@@ -285,12 +285,12 @@ cmd_uart_status(void)
     }
 
     num_str[pos] = '\0';
-    uart_putstr(num_str);
-    uart_putstr(" bytes\r\n");
+    dw_uart_putstr(num_str);
+    dw_uart_putstr(" bytes\r\n");
 
-    uart_putstr("  RX Available: ");
-    uart_putstr(uart_rx_available() ? "Yes" : "No");
-    uart_putstr("\r\n");
+    dw_uart_putstr("  RX Available: ");
+    dw_uart_putstr(dw_uart_rx_available() ? "Yes" : "No");
+    dw_uart_putstr("\r\n");
 }
 
 // 辅助函数：将数字转换为字符串
@@ -367,9 +367,9 @@ cmd_ps(void)
 {
     extern task_manager_t g_task_manager;
 
-    uart_putstr("Process Status:\r\n");
-    uart_putstr("PID  NAME         STATE CPU  TIME(ms) SLICE SLEEP_UNTIL\r\n");
-    uart_putstr("---- ------------ ----- --- -------- ----- -----------\r\n");
+    dw_uart_putstr("Process Status:\r\n");
+    dw_uart_putstr("PID  NAME         STATE CPU  TIME(ms) SLICE SLEEP_UNTIL\r\n");
+    dw_uart_putstr("---- ------------ ----- --- -------- ----- -----------\r\n");
 
     uint64_t current_tick = timer_get_system_ticks();
 
@@ -397,44 +397,44 @@ cmd_ps(void)
             }
 
             // 输出任务信息
-            uart_putstr(pid_str);
-            uart_putstr(" ");
+            dw_uart_putstr(pid_str);
+            dw_uart_putstr(" ");
 
             // 任务名称（最多12个字符，左对齐）
             char name_padded[16];
             strncpy(name_padded, task->name, 12);
             name_padded[12] = '\0';
             int name_len = strlen(name_padded);
-            uart_putstr(name_padded);
+            dw_uart_putstr(name_padded);
             for (int j = name_len; j < 12; j++) {
-                uart_putchar(' ');
+                dw_uart_putchar(' ');
             }
-            uart_putstr(" ");
+            dw_uart_putstr(" ");
 
-            uart_putstr(get_task_state_str(task->state));
-            uart_putstr(" ");
-            uart_putstr(cpu_str);
-            uart_putstr(" ");
-            uart_putstr(time_str);
-            uart_putstr(" ");
-            uart_putstr(slice_str);
-            uart_putstr(" ");
-            uart_putstr(sleep_str);
-            uart_putstr("\r\n");
+            dw_uart_putstr(get_task_state_str(task->state));
+            dw_uart_putstr(" ");
+            dw_uart_putstr(cpu_str);
+            dw_uart_putstr(" ");
+            dw_uart_putstr(time_str);
+            dw_uart_putstr(" ");
+            dw_uart_putstr(slice_str);
+            dw_uart_putstr(" ");
+            dw_uart_putstr(sleep_str);
+            dw_uart_putstr("\r\n");
         }
     }
 
     // 显示当前系统信息
-    uart_putstr("\r\nSystem Info:\r\n");
+    dw_uart_putstr("\r\nSystem Info:\r\n");
     char tick_str[16];
     uint64_to_str(current_tick, tick_str, 10);
-    uart_putstr("Current Tick: ");
-    uart_putstr(tick_str);
-    uart_putstr("\r\n");
+    dw_uart_putstr("Current Tick: ");
+    dw_uart_putstr(tick_str);
+    dw_uart_putstr("\r\n");
 
     char uptime_str[16];
     uint64_to_str(current_tick * 10, uptime_str, 10);  // 转换为毫秒
-    uart_putstr("Uptime (ms):  ");
-    uart_putstr(uptime_str);
-    uart_putstr("\r\n");
+    dw_uart_putstr("Uptime (ms):  ");
+    dw_uart_putstr(uptime_str);
+    dw_uart_putstr("\r\n");
 }

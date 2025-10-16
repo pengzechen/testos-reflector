@@ -7,6 +7,20 @@
 
 _start:
 
+    // Uart0 = 0xfeb50000
+    mov x9, #0x0
+    movk x9, #0xfeb5, lsl #16
+    lsr x19, x19, #8
+    // ID Hi
+    add x10, x19, #48
+    str x10, [x9]
+    mov x10, #72
+    str x10, [x9]
+    mov x10, #105
+    str x10, [x9]
+    mov x10, #10
+    str x10, [x9]
+
     msr daifset, #2   // 关闭所有中断
 
     adrp    x0, exception_vector_base

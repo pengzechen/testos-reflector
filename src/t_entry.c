@@ -3,17 +3,14 @@
 
 #include "lib/t_logger.h"
 
-#include "t_gicv2.h"
-#include "t_uart.h"
+#include "t_gicv3.h"
+#include "t_dw_uart.h"
 #include "t_timer.h"
 #include "simplebash.h"
 #include "t_task.h"
 
 #include "t_sysreg.h"
 
-// SMP函数声明
-extern void
-start_secondary_cpus(void);
 
 
 // 测试任务1 - 抢占式调度测试
@@ -58,7 +55,7 @@ shell_task_entry(void *arg)
     // Main shell loop
     while (1) {
         // Check if there's input available and process it
-        if (uart_rx_available()) {
+        if (dw_uart_rx_available()) {
             simplebash_run();
         } else {
             // 让出CPU给其他任务
@@ -128,6 +125,59 @@ t_main_entry()
     }
 }
 
+extern void __bss_start();
+extern void __bss_end();
+
+// 主内核入口函数
+void
+t_kernel_main(void)
+{
+    logger_info("bss start: %p, end: %p, size: %u KB\n",
+                &__bss_start,
+                &__bss_end,
+                ((uint64_t) &__bss_end - (uint64_t) &__bss_start) / 1024);
+
+    // 初始化gicv3芯片
+    gicv3_init();
+    
+    // dw_uart_init();
+
+    // 初始化定时器
+    timer_init();
+    // 显示定时器信息
+    // timer_dump_info();
+    
+    // ======================================
+    // ======================================
+    // 在这里测试一下时钟中断是否正常
+    // 启用定时器
+    timer_enable();
+
+    enable_interrupts();  // daifclr 2
+
+    while (1) {
+        WFI();
+        // 检查是否有任务需要调度
+        // scheduler_schedule(cpu_id);
+    }
+    // ======================================
+    // ======================================
+
+
+    // 初始化任务管理器
+    task_manager_init();
+
+    logger_info("Task manager initialized, starting main entry\n");
+
+    // 调用 main_entry
+    t_main_entry();
+}
+
+
+// SMP函数声明
+extern void
+start_secondary_cpus(void);
+
 void
 t_main_entry2()
 {
@@ -141,7 +191,7 @@ t_main_entry2()
 
     simplebash_init();
     while (1) {
-        if (uart_rx_available()) {
+        if (dw_uart_rx_available()) {
             simplebash_run();
         } else {
             // 让出CPU给其他任务
@@ -150,40 +200,12 @@ t_main_entry2()
     }
 }
 
-// 主内核入口函数
-void
-t_kernel_main(void)
-{
-    // 初始化gic芯片
-    gic_init();
-    // 显示GIC测试信息
-    // gic_test_init();
-
-    // 初始化UART
-    uart_init();
-
-    // 初始化定时器
-    timer_init();
-    // 显示定时器信息
-    // timer_dump_info();
-
-    // 初始化任务管理器
-    task_manager_init();
-
-    logger_info("Task manager initialized, starting main entry\n");
-
-    // 单核测试，不启动其他CPU核心
-
-    // 调用 main_entry
-    t_main_entry();
-}
-
 // 副核CPU核心的入口函数
 void
 t_second_kernel_main(void)
 {
-    // 初始化gicc
-    gicc_init();
+    // rk3588 先不考虑多核
+    // gicc_init();
 
     // 初始化定时器
     timer_init();

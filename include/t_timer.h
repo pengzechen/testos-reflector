@@ -8,13 +8,23 @@
 
 // 定时器寄存器访问宏 - 使用统一的系统寄存器定义
 #define CNTFRQ_EL0_READ()        READ_CNTFRQ_EL0()
+
 #define CNTVCT_EL0_READ()        READ_CNTVCT_EL0()
+#define CNTPCT_EL0_READ()        READ_CNTPCT_EL0()
+
 #define CNTV_CTL_EL0_READ()      READ_CNTV_CTL_EL0()
+#define CNTP_CTL_EL0_READ()      READ_CNTP_CTL_EL0()
+
 #define CNTV_CTL_EL0_WRITE(val)  WRITE_CNTV_CTL_EL0(val)
+#define CNTP_CTL_EL0_WRITE(val)  WRITE_CNTP_CTL_EL0(val)
+
 #define CNTV_CVAL_EL0_READ()     READ_CNTV_CVAL_EL0()
 #define CNTV_CVAL_EL0_WRITE(val) WRITE_CNTV_CVAL_EL0(val)
+
 #define CNTV_TVAL_EL0_READ()     READ_CNTV_TVAL_EL0()
+
 #define CNTV_TVAL_EL0_WRITE(val) WRITE_CNTV_TVAL_EL0(val)
+#define CNTP_TVAL_EL0_WRITE(val) WRITE_CNTP_TVAL_EL0(val)
 
 // 定时器控制寄存器位定义
 #define CNTV_CTL_ENABLE  (1 << 0)  // 使能定时器

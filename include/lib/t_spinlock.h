@@ -10,7 +10,7 @@
  */
 typedef struct
 {
-    volatile int lock;
+    volatile uint64_t lock;
 } spinlock_t;
 
 /*
@@ -20,7 +20,7 @@ typedef struct
  */
 typedef struct
 {
-    volatile int      lock;       // 锁状态，0=未锁定，1=已锁定
+    volatile uint64_t      lock;       // 锁状态，0=未锁定，1=已锁定
     volatile uint32_t irq_flags;  // 保存的中断状态
 } spinlock_irq_t;
 

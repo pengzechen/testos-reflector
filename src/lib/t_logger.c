@@ -11,7 +11,7 @@
 #include "t_mmio.h"
 #include "lib/t_spinlock.h"
 #include "cfg/t_cfg.h"
-#include "t_uart.h"
+#include "t_dw_uart.h"
 #include "lib/t_logger.h"
 
 
@@ -45,10 +45,10 @@ typedef struct
 
 // 日志级别配置表
 static const log_config_t log_configs[] = {
-    [LOG_LEVEL_DEBUG]  = {ANSI_BLUE, false, false},  // 蓝色，无前缀
-    [LOG_LEVEL_INFO]   = {ANSI_GREEN, true, true},   // 绿色，带前缀
-    [LOG_LEVEL_WARN]   = {ANSI_YELLOW, true, true},  // 黄色，带前缀
-    [LOG_LEVEL_ERROR]  = {ANSI_RED, true, true},     // 红色，带前缀
+    [LOG_LEVEL_DEBUG]  = {NULL, false, false},  // 蓝色，无前缀
+    [LOG_LEVEL_INFO]   = {NULL, true, true},   // 绿色，带前缀
+    [LOG_LEVEL_WARN]   = {NULL, true, true},  // 黄色，带前缀
+    [LOG_LEVEL_ERROR]  = {NULL, true, true},     // 红色，带前缀
     [LOG_LEVEL_NORMAL] = {NULL, true, true},         // 无色，带前缀
 };
 
@@ -75,7 +75,7 @@ static spinlock_irq_t print_lock = SPINLOCK_IRQ_INIT;
 static int
 logger_output(log_level_t level, const char *fmt, va_list args)
 {
-    spin_lock_irqsave(&print_lock);
+    // spin_lock_irqsave(&print_lock);
 
     char buf[BUFSZ];
     int  r = my_vsnprintf(buf, sizeof buf, fmt, args);
@@ -84,7 +84,7 @@ logger_output(log_level_t level, const char *fmt, va_list args)
 
     // 输出颜色代码
     if (config->color) {
-        uart_putstr(config->color);
+        dw_uart_putstr(config->color);
     }
 
     // 输出客户标签和核心前缀（合并格式：[TESTOS:core0]）
@@ -107,27 +107,27 @@ logger_output(log_level_t level, const char *fmt, va_list args)
         }
 
         my_snprintf(tag_prefix, sizeof(tag_prefix), "[%s:core%d] ", label_name, cid);
-        uart_putstr(tag_prefix);
+        dw_uart_putstr(tag_prefix);
     } else if (config->show_core_prefix) {
         // 只显示核心前缀
         char core_prefix[16];
         int  cid = t_get_current_cpu_id();
         my_snprintf(core_prefix, sizeof(core_prefix), "[core%d] ", cid);
-        uart_putstr(core_prefix);
+        dw_uart_putstr(core_prefix);
     } else if (config->show_guest_label) {
         // 只显示客户标签
-        uart_putstr(GUEST_LABEL);
+        dw_uart_putstr(GUEST_LABEL);
     }
 
     // 输出消息内容
-    uart_putstr(buf);
+    dw_uart_putstr(buf);
 
     // 重置颜色
     if (config->color) {
-        uart_putstr(ANSI_RESET);
+        dw_uart_putstr(ANSI_RESET);
     }
 
-    spin_unlock_irqrestore(&print_lock);
+    // spin_unlock_irqrestore(&print_lock);
     return r;
 }
 
@@ -388,7 +388,7 @@ my_vprintf(const char *fmt, va_list va)
     int  r;
 
     r = my_vsnprintf(buf, sizeof(buf), fmt, va);
-    uart_putstr(buf);
+    dw_uart_putstr(buf);
     return r;
 }
 
@@ -483,37 +483,37 @@ t_run_printf_tests(void)
 
     // T1: print_int(0, ...) => 应该输出 "0"
     my_snprintf(buf, sizeof(buf), "%d", 0);
-    uart_putstr("T1: expect [0] got [");
-    uart_putstr(buf);
-    uart_putstr("]\n");
+    dw_uart_putstr("T1: expect [0] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
 
     // T2: %#x 应该输出 "0x1a2b" 形式
     my_snprintf(buf, sizeof(buf), "%#x", 0x1a2b);
-    uart_putstr("T2: expect [0x1a2b] got [");
-    uart_putstr(buf);
-    uart_putstr("]\n");
+    dw_uart_putstr("T2: expect [0x1a2b] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
 
     // T3: 负数打印
     my_snprintf(buf, sizeof(buf), "%d", -12345);
-    uart_putstr("T3: expect [-12345] got [");
-    uart_putstr(buf);
-    uart_putstr("]\n");
+    dw_uart_putstr("T3: expect [-12345] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
 
     // T4: %-10s 左对齐字符串
     my_snprintf(buf, sizeof(buf), "|%-10s|", "abc");
-    uart_putstr("T4: expect [|abc       |] got [");
-    uart_putstr(buf);
-    uart_putstr("]\n");
+    dw_uart_putstr("T4: expect [|abc       |] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
 
     // T5: %% 测试
     my_snprintf(buf, sizeof(buf), "rate: 100%%");
-    uart_putstr("T5: expect [rate: 100%] got [");
-    uart_putstr(buf);
-    uart_putstr("]\n");
+    dw_uart_putstr("T5: expect [rate: 100%] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
 
     // T6: %08x 测试，检查是否前导 0 填充
     my_snprintf(buf, sizeof(buf), "%08x", 0x123);
-    uart_putstr("T6: expect [00000123] got [");
-    uart_putstr(buf);
-    uart_putstr("]\n");
+    dw_uart_putstr("T6: expect [00000123] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
 }

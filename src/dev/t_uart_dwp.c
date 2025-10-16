@@ -1,0 +1,211 @@
+#include "t_dw_uart.h"
+#include "t_types.h"
+#include "t_mmio.h"
+#include "lib/t_spinlock.h"
+#include "lib/t_logger.h"
+#include "t_exception.h"
+#include "t_gicv3.h"
+
+#define DW_UART_TX_BUFFER_SIZE 1024
+#define DW_UART_RX_BUFFER_SIZE 1024
+
+typedef struct {
+    char buffer[DW_UART_TX_BUFFER_SIZE];
+    volatile uint32_t head, tail, count;
+    spinlock_irq_t lock;
+} dw_uart_buffer_t;
+
+static dw_uart_buffer_t tx_buffer = {0};
+static dw_uart_buffer_t rx_buffer = {0};
+static volatile bool dw_uart_initialized = false;
+
+static bool buffer_is_empty(dw_uart_buffer_t *buf) {
+    return buf->count == 0;
+}
+static bool buffer_is_full(dw_uart_buffer_t *buf) {
+    return buf->count >= DW_UART_TX_BUFFER_SIZE;
+}
+static bool buffer_put(dw_uart_buffer_t *buf, char c) {
+    if (buffer_is_full(buf)) return false;
+    buf->buffer[buf->head] = c;
+    buf->head = (buf->head + 1) % DW_UART_TX_BUFFER_SIZE;
+    buf->count++;
+    return true;
+}
+static bool buffer_get(dw_uart_buffer_t *buf, char *c) {
+    if (buffer_is_empty(buf)) return false;
+    *c = buf->buffer[buf->tail];
+    buf->tail = (buf->tail + 1) % DW_UART_TX_BUFFER_SIZE;
+    buf->count--;
+    return true;
+}
+
+static bool dw_uart_tx_ready(void) {
+    return (read32((void *)DW_UART_LSR) & DW_UART_LSR_THRE) != 0;
+}
+static bool dw_uart_rx_ready(void) {
+    return (read32((void *)DW_UART_LSR) & DW_UART_LSR_DR) != 0;
+}
+static void dw_uart_enable_tx_interrupt(void) {
+    uint32_t ier = read32((void *)DW_UART_IER);
+    ier |= DW_UART_IER_THRI;
+    write32(ier, (void *)DW_UART_IER);
+}
+static void dw_uart_disable_tx_interrupt(void) {
+    uint32_t ier = read32((void *)DW_UART_IER);
+    ier &= ~DW_UART_IER_THRI;
+    write32(ier, (void *)DW_UART_IER);
+}
+static void dw_uart_enable_rx_interrupt(void) {
+    uint32_t ier = read32((void *)DW_UART_IER);
+    ier |= DW_UART_IER_RDI;
+    write32(ier, (void *)DW_UART_IER);
+}
+
+void dw_uart_interrupt_handler(uint64_t *stack_pointer) {
+    uint32_t iir = read32((void *)DW_UART_IIR) & 0xF;
+    if (iir == 0x4) { // RX
+        spin_lock_irqsave(&rx_buffer.lock);
+        while (dw_uart_rx_ready()) {
+            char c = (char)read32((void *)DW_UART_RBR);
+            buffer_put(&rx_buffer, c);
+        }
+        spin_unlock_irqrestore(&rx_buffer.lock);
+    }
+    if (iir == 0x2) { // TX
+        spin_lock_irqsave(&tx_buffer.lock);
+        while (dw_uart_tx_ready() && !buffer_is_empty(&tx_buffer)) {
+            char c;
+            if (buffer_get(&tx_buffer, &c)) {
+                write32((uint32_t)c, (void *)DW_UART_THR);
+            }
+        }
+        if (buffer_is_empty(&tx_buffer)) {
+            dw_uart_disable_tx_interrupt();
+        }
+        spin_unlock_irqrestore(&tx_buffer.lock);
+    }
+}
+
+void dw_uart_init(void) {
+    
+    if (dw_uart_initialized) return;
+    
+    spinlock_irq_init(&tx_buffer.lock);
+    spinlock_irq_init(&rx_buffer.lock);
+    
+    tx_buffer.head = tx_buffer.tail = tx_buffer.count = 0;
+    rx_buffer.head = rx_buffer.tail = rx_buffer.count = 0;
+
+    // 关闭 UART
+    write32(0, (void *)DW_UART_IER);
+
+
+    // 配置波特率（假设24MHz，115200）
+    uint32_t lcr = read32((void *)DW_UART_LCR);
+
+    write32(lcr | DW_UART_LCR_DLAB, (void *)DW_UART_LCR);
+    write32(13, (void *)DW_UART_DLL);
+    write32(0, (void *)DW_UART_DLM);
+    write32(lcr & ~DW_UART_LCR_DLAB, (void *)DW_UART_LCR);
+
+    // 8N1
+    write32(0x3, (void *)DW_UART_LCR);
+
+    // 使能 FIFO
+    write32(DW_UART_FCR_ENABLE_FIFO | DW_UART_FCR_CLEAR_RCVR | DW_UART_FCR_CLEAR_XMIT, (void *)DW_UART_FCR);
+
+    // 使能 RX 中断
+    dw_uart_enable_rx_interrupt();
+
+    // 安装中断处理
+    irq_install(DW_UART_IRQ, dw_uart_interrupt_handler);
+    
+    gicv3_enable_int(DW_UART_IRQ, true);
+
+    // dw_uart_initialized = true;
+    
+    logger_info("DWC UART interrupt driver initialized\n");
+}
+
+bool dw_uart_putchar_nb(char c) {
+    if (!dw_uart_initialized) return false;
+    spin_lock_irqsave(&tx_buffer.lock);
+    bool success = false;
+    if (buffer_is_empty(&tx_buffer) && dw_uart_tx_ready()) {
+        write32((uint32_t)c, (void *)DW_UART_THR);
+        success = true;
+    } else {
+        success = buffer_put(&tx_buffer, c);
+        if (success) {
+            dw_uart_enable_tx_interrupt();
+        }
+    }
+    spin_unlock_irqrestore(&tx_buffer.lock);
+    return success;
+}
+
+void dw_uart_putchar(char c) {
+    // 如果 UART 尚未初始化，直接写寄存器
+    if (!dw_uart_initialized) {
+        volatile unsigned int *const UARTDR = (unsigned int *)DW_UART_THR;
+        // 如果是 '\n'，先发送 '\r'
+        if (c == '\n') {
+            *UARTDR = (unsigned int)'\r';
+        }
+        *UARTDR = (unsigned int)c;
+        return;
+    }
+    if (dw_uart_putchar_nb(c)) return;
+    int timeout = 10000;
+    while (timeout-- > 0) {
+        if (dw_uart_putchar_nb(c)) return;
+        for (int i = 0; i < 100; i++) asm volatile("nop");
+    }
+    logger_warn("DWC UART TX buffer full, dropping character\n");
+}
+
+void dw_uart_putstr(const char *str) {
+    while (*str) dw_uart_putchar(*str++);
+}
+
+void dw_uart_flush(void) {
+    if (!dw_uart_initialized) return;
+    int timeout = 100000;
+    while (timeout-- > 0) {
+        spin_lock_irqsave(&tx_buffer.lock);
+        bool empty = (tx_buffer.head == tx_buffer.tail);
+        spin_unlock_irqrestore(&tx_buffer.lock);
+        if (empty) break;
+        for (int i = 0; i < 10; i++) asm volatile("nop");
+    }
+    timeout = 10000;
+    while (timeout-- > 0) {
+        if (dw_uart_tx_ready()) break;
+        for (int i = 0; i < 10; i++) asm volatile("nop");
+    }
+}
+
+bool dw_uart_getchar_nb(char *c) {
+    if (!dw_uart_initialized) return false;
+    spin_lock_irqsave(&rx_buffer.lock);
+    bool success = buffer_get(&rx_buffer, c);
+    spin_unlock_irqrestore(&rx_buffer.lock);
+    return success;
+}
+
+bool dw_uart_rx_available(void) {
+    if (!dw_uart_initialized) return false;
+    spin_lock_irqsave(&rx_buffer.lock);
+    bool available = !buffer_is_empty(&rx_buffer);
+    spin_unlock_irqrestore(&rx_buffer.lock);
+    return available;
+}
+
+uint32_t dw_uart_tx_buffer_usage(void) {
+    if (!dw_uart_initialized) return 0;
+    spin_lock_irqsave(&tx_buffer.lock);
+    uint32_t usage = tx_buffer.count;
+    spin_unlock_irqrestore(&tx_buffer.lock);
+    return usage;
+}
