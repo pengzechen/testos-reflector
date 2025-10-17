@@ -125,7 +125,7 @@ timer_handler(uint64_t *stack_pointer)
     g_timer_stats.total_schedules++;
 
     // 每100个tick打印一次信息（每1秒，因为100Hz）
-    if (g_system_ticks % (TIMER_FREQUENCY_HZ * 20) == 0) {
+    if (g_system_ticks % (TIMER_FREQUENCY_HZ * 30) == 0) {
         logger_info("Timer: %llu seconds, %llu ticks, %llu interrupts\n",
                     g_system_ticks / TIMER_FREQUENCY_HZ,
                     g_system_ticks,

@@ -67,11 +67,11 @@ gicv3_init(void)
     uint64_t sre = read_sysreg(ICC_SRE_EL1);
     sre |= 0x7;  // SRE=1, DIB=1, DFB=1
     write_sysreg(ICC_SRE_EL1, sre);
-    
+
     write_sysreg(ICC_CTLR_EL1, 0x0);
-    
+
     write_sysreg(ICC_PMR_EL1, 0xFF);  // 允许所有优先级
-    
+
     write_sysreg(ICC_IGRPEN1_EL1, 0x1);  // gicc ctrl r
 
     logger_info("GICv3: Init done\n");
@@ -102,6 +102,39 @@ gicv3_enable_int(int int_id, bool enable)
     }
 }
 
+bool
+gicv3_is_int_enabled(int int_id)
+{
+    uint32_t cpu_id = 0;  // TODO: 多核时需获取当前 CPU ID
+    uint32_t mask   = 1u << (int_id % 32);
+    uint32_t val;
+
+    if (int_id < 32) {
+        // SGI / PPI
+        val = read32((void *) (uint64_t) GICR_ISENABLER0(cpu_id));
+    } else {
+        // SPI
+        uint32_t reg = int_id / 32;
+        val          = read32((void *) (uint64_t) GICD_ISENABLERn(reg));
+    }
+
+    return (val & mask) ? true : false;
+}
+
+void
+gicv3_set_int_trigger(uint32_t int_id, int edge)
+{
+    // edge = 0: level, edge = 1: edge
+    uint32_t reg   = int_id / 16;
+    uint32_t shift = (int_id % 16) * 2;
+
+    uint32_t val = read32(GICD_ICFGR(reg));
+    if (edge)
+        val |= (1 << (shift + 1));  // 设置 bit1 = 1 → 边沿
+    else
+        val &= ~(1 << (shift + 1));  // 设置 bit1 = 0 → 电平
+    write32(val, GICD_ICFGR(reg));
+}
 
 uint32_t
 gicv3_read_iar(void)

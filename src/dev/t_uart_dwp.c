@@ -51,18 +51,21 @@ buffer_get(dw_uart_buffer_t *buf, char *c)
     return true;
 }
 
+/// DW_UART_THR 空了，可以写入新数据时，硬件会置位
 static bool
 dw_uart_tx_ready(void)
 {
     return (read32((void *) DW_UART_LSR) & DW_UART_LSR_THRE) != 0;
 }
+
+/// DW_UART_RBR 中的数据可读了，硬件给他置位
 static bool
 dw_uart_rx_ready(void)
 {
     return (read32((void *) DW_UART_LSR) & DW_UART_LSR_DR) != 0;
 }
 
-
+// 启用发送中断， 我有数据可以发送了
 static void
 dw_uart_enable_tx_interrupt(void)
 {
@@ -70,6 +73,7 @@ dw_uart_enable_tx_interrupt(void)
     ier |= DW_UART_IER_THRI;
     write32(ier, (void *) DW_UART_IER);
 }
+// 禁用发送中断， 我已经没有数据可以发送了
 static void
 dw_uart_disable_tx_interrupt(void)
 {
@@ -77,6 +81,7 @@ dw_uart_disable_tx_interrupt(void)
     ier &= ~DW_UART_IER_THRI;
     write32(ier, (void *) DW_UART_IER);
 }
+// 启用接收中断， 我准备好接收数据了
 static void
 dw_uart_enable_rx_interrupt(void)
 {
@@ -91,7 +96,7 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
     logger_info("Uart handler invoke...\n");
     
     uint32_t iir = read32((void *) DW_UART_IIR) & 0xF;
-    if (iir == 0x4) {  // RX
+    if (iir == 0x4) {  // RX 有人按下了键盘的键， 可以读数据了
     
         spin_lock_irqsave(&rx_buffer.lock);
         while (dw_uart_rx_ready()) {
@@ -101,7 +106,7 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
         spin_unlock_irqrestore(&rx_buffer.lock);
     
     }
-    if (iir == 0x2) {  // TX
+    if (iir == 0x2) {  // TX  **TX 中断是“可以发下一个字节了”**的信号
         spin_lock_irqsave(&tx_buffer.lock);
     
         while (dw_uart_tx_ready() && !buffer_is_empty(&tx_buffer)) {
@@ -111,6 +116,13 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
             }
         }
         if (buffer_is_empty(&tx_buffer)) {
+            /*
+                它的意义是：
+                    当我们已经把所有待发送的数据都写给硬件时，就没必要再关心 TX 中断了。
+                因为：
+                    硬件下次“THR 空了”时，我们也没数据可以写；
+                    如果不关中断，硬件会不停地产生 TX 中断，每次都发现“没数据”，浪费 CPU。
+            */
             dw_uart_disable_tx_interrupt();
         }
         spin_unlock_irqrestore(&tx_buffer.lock);
@@ -166,6 +178,12 @@ dw_uart_init(void)
 
     gicv3_enable_int(DW_UART_IRQ, true); 
 
+    gicv3_set_int_trigger(DW_UART_IRQ, 1); // 设置为电平触发
+
+    if (gicv3_is_int_enabled(DW_UART_IRQ)) {
+        logger_warn("DW UART IRQ %d is enabled in GICv3\n", DW_UART_IRQ);
+    }
+
     // dw_uart_initialized = true;
 
     logger_info("DWC UART interrupt driver initialized\n");
@@ -179,6 +197,8 @@ dw_uart_putchar_nb(char c)
     spin_lock_irqsave(&tx_buffer.lock);
     bool success = false;
     if (buffer_is_empty(&tx_buffer) && dw_uart_tx_ready()) {
+        // 发送缓冲区满了，并且硬件可以发送新数据
+        // 直接发送
         write32((uint32_t) c, (void *) DW_UART_THR);
         success = true;
     } else {
@@ -206,6 +226,7 @@ dw_uart_putchar(char c)
     }
     if (dw_uart_putchar_nb(c))
         return;
+    
     int timeout = 10000;
     while (timeout-- > 0) {
         if (dw_uart_putchar_nb(c))
