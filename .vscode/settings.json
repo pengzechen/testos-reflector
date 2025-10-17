@@ -15,6 +15,9 @@
         "t_gicv2.h": "c",
         "*.bak": "c",
         "t_gicv3.h": "c",
-        "t_dw_uart.h": "c"
+        "t_dw_uart.h": "c",
+        "rknpu.h": "c",
+        "rkconfig.h": "c",
+        "rkpm.h": "c"
     }
 }

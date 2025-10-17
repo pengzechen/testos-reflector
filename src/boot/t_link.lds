@@ -22,4 +22,7 @@ SECTIONS
         *(.bss)
         __bss_end = .;
     }
+
+    . = ALIGN((1 << 14));
+    PROVIDE(__heap_flag = .);
 }

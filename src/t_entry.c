@@ -11,10 +11,14 @@
 
 #include "t_sysreg.h"
 
+#include "npu/rknpu.h"
+
 extern void
 __bss_start();
 extern void
 __bss_end();
+extern void
+__heap_flag();
 
 // 测试任务1 - 抢占式调度测试
 void
@@ -179,6 +183,8 @@ t_second_kernel_main(void)
 }
 
 
+
+
 // 主内核入口函数
 void
 t_kernel_main(void)
@@ -187,6 +193,8 @@ t_kernel_main(void)
                 &__bss_start,
                 &__bss_end,
                 ((uint64_t) &__bss_end - (uint64_t) &__bss_start) / 1024);
+    
+    logger_info("heap flag address: %p\n", &__heap_flag);
 
 
     // 在 main 里打印
@@ -208,6 +216,10 @@ t_kernel_main(void)
     timer_enable();
     enable_interrupts();  // daifclr 2
     logger_info("After enabling interrupts\n");
+
+    // RKNPU 初始化测试
+    rknpu_init();
+
 
 
     while (1) {

@@ -1,0 +1,100 @@
+
+#ifndef __RKNPU_REGS_H__
+#define __RKNPU_REGS_H__
+
+#include "t_types.h"
+
+/*
+ * ==========================================
+ *  Rockchip NPU 寄存器基地址定义
+ * ==========================================
+ */
+
+/// NPU 核心寄存器基地址
+/// 来自设备树: npu@fdab0000
+/// reg = <0x00 0xfdab0000 0x00 0x10000>    # NPU0 核心
+///       <0x00 0xfdac0000 0x00 0x10000>    # NPU1 核心
+///       <0x00 0xfdad0000 0x00 0x10000>;   # NPU2 核心
+#define NPU0_BASE           0xFDAB0000UL
+#define NPU1_BASE           0xFDAC0000UL
+#define NPU2_BASE           0xFDAD0000UL
+
+/// 每个核心的寄存器空间大小 (64KB)
+#define NPU_CORE_SIZE       0x00010000UL
+
+/// PMU1 (电源管理单元) 基地址
+/// 来自设备树: power-management@fd8d8000
+/// 用于控制 NPU 各核心的电源域开关
+#define PMU1_BASE           0xFD8D8000UL
+
+/// CRU (时钟复位单元) 基地址
+/// 用于控制 NPU 时钟门控和软复位
+#define CRU_BASE            0xFD7C0000UL
+
+/// GPIO3 基地址
+/// 用于某些电源控制引脚的 GPIO 操作
+#define GPIO3_BASE          0xFEC40000UL
+
+#define RK3588_NPU_VERSION  0x46495245UL  // 1179210309
+
+#define INT_CLEAR_VALUE     0x1ffff
+
+typedef struct {
+    /// 带宽优先级寄存器地址
+    uint32_t bw_priority_addr;
+    /// 带宽优先级寄存器长度
+    uint32_t bw_priority_length;
+    /// DMA 掩码位数
+    uint32_t dma_mask_bits;
+    /// PC 数据量缩放比例
+    uint32_t pc_data_amount_scale;
+    /// PC 任务编号位数
+    uint32_t pc_task_number_bits;
+    /// PC 任务编号掩码
+    uint32_t pc_task_number_mask;
+    /// PC 任务状态偏移
+    uint32_t pc_task_status_offset;
+    /// PC DMA 控制
+    uint32_t pc_dma_ctrl;
+    /// 带宽使能
+    bool     bw_enable;
+    /// 中断数量
+    size_t   num_irqs;
+    /// 复位数量
+    size_t   num_resets;
+    /// NBUF 物理地址
+    uint64_t nbuf_phyaddr;
+    /// NBUF 大小
+    uint64_t nbuf_size;
+    /// 最大提交数量
+    uint64_t max_submit_number;
+    /// 核心掩码
+    uint32_t core_mask;
+} RknpuConfig;
+
+/*
+ * ==========================================
+ *  RK3588 平台 NPU 配置
+ * ==========================================
+ */
+static const RknpuConfig RK3588_CONFIG = {
+    .bw_priority_addr      = 0x0,
+    .bw_priority_length    = 0x0,
+    .dma_mask_bits         = 40,
+    .pc_data_amount_scale  = 2,
+    .pc_task_number_bits   = 12,
+    .pc_task_number_mask   = 0xFFF,
+    .pc_task_status_offset = 0x3C,
+    .pc_dma_ctrl           = 0,
+    .bw_enable             = false,
+    .num_irqs              = 3,
+    .num_resets            = 3,
+    .nbuf_phyaddr          = 0,
+    .nbuf_size             = 0,
+    .max_submit_number     = (1ULL << 12) - 1,
+    .core_mask             = 0x7,
+};
+
+
+
+#endif /* __RKNPU_REGS_H__ */
