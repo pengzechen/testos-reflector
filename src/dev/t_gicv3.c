@@ -42,29 +42,37 @@ read_sysreg(const char *reg)
     return val;
 }
 
-void gicv3_init(void)
+void
+gicv3_init(void)
 {
     logger_info("GICv3: Initializing...\n");
 
     // ---- Distributor ----
-    // 所有 SPI 设为 Group1NS
-    write32(0xFFFFFFFF, (void *)(GICD_BASE_ADDR + 0x80)); // GICD_IGROUPR0 etc.
-    // 启用 Group1NS
-    write32((1 << 1), (void *) GICD_CTLR);
+    write32(0xFFFFFFFF, (void *) (GICD_IGROUPR));  // GICD_IGROUPR0 etc.
 
-    
+    uint32_t gicd_ctrlr = read32((void *) (uint64_t) GICD_CTLR);
+    // 启用 组零，组一，ARE
+    gicd_ctrlr |= GICD_CTLR_ENS_BIT | GICD_CTLR_ENNS_BIT | GICD_CTLR_ARE_NS_BIT;
+    write32(gicd_ctrlr, (void *) GICD_CTLR);
+
+
     // ---- Redistributor ----
     uint32_t val = read32((void *) GICR_WAKER);
-    val &= ~(1 << 1);                         // Clear ProcessorSleep
+    val &= ~(1 << 1);  // Clear ProcessorSleep
     write32(val, (void *) GICR_WAKER);
     while (read32((void *) GICR_WAKER) & (1 << 2))
         ;
 
     // ---- CPU interface ----
-    write_sysreg(ICC_SRE_EL1, 0x7);   // 允许 System Register 接口
+    uint64_t sre = read_sysreg(ICC_SRE_EL1);
+    sre |= 0x7;  // SRE=1, DIB=1, DFB=1
+    write_sysreg(ICC_SRE_EL1, sre);
+    
     write_sysreg(ICC_CTLR_EL1, 0x0);
+    
     write_sysreg(ICC_PMR_EL1, 0xFF);  // 允许所有优先级
-    write_sysreg(ICC_IGRPEN1_EL1, 0x1);
+    
+    write_sysreg(ICC_IGRPEN1_EL1, 0x1);  // gicc ctrl r
 
     logger_info("GICv3: Init done\n");
 }
@@ -81,16 +89,16 @@ gicv3_enable_int(int int_id, bool enable)
     if (int_id < 32) {
         // SGI/PPI (per-core)
         if (enable)
-            write32(mask, (void *) GICR_ISENABLER0(cpu_id));
+            write32(mask, (void *) (uint64_t) GICR_ISENABLER0(cpu_id));
         else
-            write32(mask, (void *) GICR_ICENABLER0(cpu_id));
+            write32(mask, (void *) (uint64_t) GICR_ICENABLER0(cpu_id));
     } else {
         // SPI (shared)
         uint32_t reg = int_id / 32;
         if (enable)
-            write32(mask, (void *) GICD_ISENABLERn(reg));
+            write32(mask, (void *) (uint64_t) GICD_ISENABLERn(reg));
         else
-            write32(mask, (void *) GICD_ICENABLERn(reg));
+            write32(mask, (void *) (uint64_t) GICD_ICENABLERn(reg));
     }
 }
 

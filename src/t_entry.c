@@ -12,7 +12,6 @@
 #include "t_sysreg.h"
 
 
-
 // 测试任务1 - 抢占式调度测试
 void
 test_task1_entry(void *arg)
@@ -125,8 +124,19 @@ t_main_entry()
     }
 }
 
-extern void __bss_start();
-extern void __bss_end();
+extern void
+__bss_start();
+extern void
+__bss_end();
+
+
+static inline unsigned
+read_currentel(void)
+{
+    unsigned el;
+    asm volatile("mrs %0, CurrentEL" : "=r"(el));
+    return (el >> 2) & 0x3;
+}
 
 // 主内核入口函数
 void
@@ -137,16 +147,21 @@ t_kernel_main(void)
                 &__bss_end,
                 ((uint64_t) &__bss_end - (uint64_t) &__bss_start) / 1024);
 
+
+    // 在 main 里打印
+    logger_warn("CurrentEL = %u\n", read_currentel());
+
     // 初始化gicv3芯片
     gicv3_init();
-    
-    // dw_uart_init();
+
+    // 初始化uart
+    dw_uart_init();
 
     // 初始化定时器
     timer_init();
     // 显示定时器信息
     // timer_dump_info();
-    
+
     // ======================================
     // ======================================
     // 在这里测试一下时钟中断是否正常

@@ -64,6 +64,10 @@ handle_irq_exception(uint64_t *stack_pointer)
         g_handler_vec[vector]((uint64_t *) el1_ctx);
     }
 
+    if (vector == 333) {
+        logger_info("uart irq...");
+    }
+
     // 先完成中断确认，确保GIC知道中断已处理完毕
     gicv3_write_eoir(iar);
     // gicv3_write_dir(iar);

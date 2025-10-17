@@ -46,8 +46,8 @@ typedef struct
 // 日志级别配置表
 static const log_config_t log_configs[] = {
     [LOG_LEVEL_DEBUG]  = {NULL, false, false},  // 蓝色，无前缀
-    [LOG_LEVEL_INFO]   = {NULL, true, true},   // 绿色，带前缀
-    [LOG_LEVEL_WARN]   = {NULL, true, true},  // 黄色，带前缀
+    [LOG_LEVEL_INFO]   = {ANSI_GREEN, true, true},   // 绿色，带前缀
+    [LOG_LEVEL_WARN]   = {ANSI_YELLOW, true, true},  // 黄色，带前缀
     [LOG_LEVEL_ERROR]  = {NULL, true, true},     // 红色，带前缀
     [LOG_LEVEL_NORMAL] = {NULL, true, true},         // 无色，带前缀
 };
@@ -75,7 +75,7 @@ static spinlock_irq_t print_lock = SPINLOCK_IRQ_INIT;
 static int
 logger_output(log_level_t level, const char *fmt, va_list args)
 {
-    // spin_lock_irqsave(&print_lock);
+    spin_lock_irqsave(&print_lock);
 
     char buf[BUFSZ];
     int  r = my_vsnprintf(buf, sizeof buf, fmt, args);
@@ -127,7 +127,7 @@ logger_output(log_level_t level, const char *fmt, va_list args)
         dw_uart_putstr(ANSI_RESET);
     }
 
-    // spin_unlock_irqrestore(&print_lock);
+    spin_unlock_irqrestore(&print_lock);
     return r;
 }
 

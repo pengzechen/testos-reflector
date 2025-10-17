@@ -101,8 +101,7 @@
  * 异常向量表
  * ARM64 异常向量表必须 2KB 对齐
  */
-.section .text
-.p2align 11
+
 
 .extern invalid_exception
 .extern handle_sync_exception
@@ -137,6 +136,8 @@
  * 3. Lower EL (AArch64)
  * 4. Lower EL (AArch32)
  */
+.section .text
+.p2align 11
 exception_vector_base:
 
 /*=============================================================================

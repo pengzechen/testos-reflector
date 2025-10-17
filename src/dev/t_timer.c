@@ -12,7 +12,8 @@ scheduler_tick(uint32_t cpu_id);
 // 调度标志位（在exception模块中定义）
 extern volatile int need_schedule_flag;
 // 检查并唤醒到期的睡眠任务
-extern void wake_up_sleeping_tasks(uint32_t cpu_id);
+extern void
+wake_up_sleeping_tasks(uint32_t cpu_id);
 
 // 全局变量
 volatile uint64_t g_system_ticks    = 0;
@@ -46,6 +47,8 @@ timer_init(void)
     logger_info("Timer initialized successfully\n");
 }
 
+// ========================================================
+
 // 启用定时器
 void
 timer_enable(void)
@@ -59,7 +62,7 @@ timer_enable(void)
     // 启用定时器，不屏蔽中断
     CNTP_CTL_EL0_WRITE(CNTV_CTL_ENABLE);
 
-    logger_info("Timer enabled with %llu ticks per interrupt\n", ticks_per_interrupt);
+    logger_warn("Timer enabled with %llu ticks per interrupt\n", ticks_per_interrupt);
 }
 
 // 禁用定时器
@@ -69,8 +72,10 @@ timer_disable(void)
     // 禁用定时器并屏蔽中断
     CNTP_CTL_EL0_WRITE(CNTV_CTL_IMASK);
 
-    logger_info("Timer disabled\n");
+    logger_warn("Timer disabled\n");
 }
+
+// ========================================================
 
 // 设置下一次中断
 void
@@ -78,8 +83,6 @@ timer_set_next_interrupt(uint64_t ticks_from_now)
 {
     CNTP_TVAL_EL0_WRITE(ticks_from_now);
 }
-
-
 
 
 // 调度下一个tick
@@ -96,7 +99,7 @@ timer_handler(uint64_t *stack_pointer)
 {
     (void) stack_pointer;  // Suppress unused parameter warning
 
-    logger_info("Timer interrupt handler invoked\n");
+    // logger_info("Timer interrupt handler invoked\n");
 
     // 更新系统tick计数
     g_system_ticks++;
@@ -122,11 +125,11 @@ timer_handler(uint64_t *stack_pointer)
     g_timer_stats.total_schedules++;
 
     // 每100个tick打印一次信息（每1秒，因为100Hz）
-    if (g_system_ticks % TIMER_FREQUENCY_HZ == 0) {
-        // logger_info("Timer: %llu seconds, %llu ticks, %llu interrupts\n",
-        //             g_system_ticks / TIMER_FREQUENCY_HZ,
-        //             g_system_ticks,
-        //             g_timer_stats.total_interrupts);
+    if (g_system_ticks % (TIMER_FREQUENCY_HZ * 20) == 0) {
+        logger_info("Timer: %llu seconds, %llu ticks, %llu interrupts\n",
+                    g_system_ticks / TIMER_FREQUENCY_HZ,
+                    g_system_ticks,
+                    g_timer_stats.total_interrupts);
     }
 
     // 前几个中断打印调试信息
