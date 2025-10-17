@@ -11,6 +11,10 @@
 
 #include "t_sysreg.h"
 
+extern void
+__bss_start();
+extern void
+__bss_end();
 
 // 测试任务1 - 抢占式调度测试
 void
@@ -124,11 +128,6 @@ t_main_entry()
     }
 }
 
-extern void
-__bss_start();
-extern void
-__bss_end();
-
 
 static inline unsigned
 read_currentel(void)
@@ -136,67 +135,6 @@ read_currentel(void)
     unsigned el;
     asm volatile("mrs %0, CurrentEL" : "=r"(el));
     return (el >> 2) & 0x3;
-}
-
-// 主内核入口函数
-void
-t_kernel_main(void)
-{
-    logger_info("bss start: %p, end: %p, size: %u KB\n",
-                &__bss_start,
-                &__bss_end,
-                ((uint64_t) &__bss_end - (uint64_t) &__bss_start) / 1024);
-
-
-    // 在 main 里打印
-    logger_warn("CurrentEL = %u\n", read_currentel());
-
-    // 初始化gicv3芯片
-    gicv3_init();
-
-    // 初始化uart
-    dw_uart_init();
-
-    // 初始化定时器
-    timer_init();
-
-    // 显示定时器信息
-    // timer_dump_info();
-
-    // ======================================
-    // ======================================
-    // 在这里测试一下时钟中断是否正常
-    // 启用定时器
-    timer_enable();
-
-    enable_interrupts();  // daifclr 2
-
-    logger_info("After enabling interrupts\n");
-
-    // 串口回显循环（使用中断版本）
-    dw_uart_putstr("\n\rTestOS Echo Mode> ");
-
-    while(1) {
-        if (dw_uart_rx_available()) {
-            char c;
-            while (dw_uart_getchar_nb(&c)) {
-                logger_info("(cpu: %d) Received char: '%c' (0x%02x)\n", get_current_cpu_id(), c, (unsigned char)c);
-            }
-        }
-        // 让出CPU给其他任务
-        WFI();
-    }
-    // ======================================
-    // ======================================
-
-
-    // 初始化任务管理器
-    task_manager_init();
-
-    logger_info("Task manager initialized, starting main entry\n");
-
-    // 调用 main_entry
-    t_main_entry();
 }
 
 
@@ -238,4 +176,41 @@ t_second_kernel_main(void)
 
     // 调用 main_entry
     t_main_entry();
+}
+
+
+// 主内核入口函数
+void
+t_kernel_main(void)
+{
+    logger_info("bss start: %p, end: %p, size: %u KB\n",
+                &__bss_start,
+                &__bss_end,
+                ((uint64_t) &__bss_end - (uint64_t) &__bss_start) / 1024);
+
+
+    // 在 main 里打印
+    logger_warn("CurrentEL = %u\n", read_currentel());
+
+    // 初始化gicv3芯片
+    gicv3_init();
+
+    // 初始化uart
+    // dw_uart_init();
+
+    // 初始化定时器
+    timer_init();
+
+    // 显示定时器信息
+    // timer_dump_info();
+
+    // 启用定时器
+    timer_enable();
+    enable_interrupts();  // daifclr 2
+    logger_info("After enabling interrupts\n");
+
+
+    while (1) {
+        WFI();
+    }
 }
