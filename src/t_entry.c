@@ -159,6 +159,7 @@ t_kernel_main(void)
 
     // 初始化定时器
     timer_init();
+
     // 显示定时器信息
     // timer_dump_info();
 
@@ -170,10 +171,20 @@ t_kernel_main(void)
 
     enable_interrupts();  // daifclr 2
 
-    while (1) {
+    logger_info("After enabling interrupts\n");
+
+    // 串口回显循环（使用中断版本）
+    dw_uart_putstr("\n\rTestOS Echo Mode> ");
+
+    while(1) {
+        if (dw_uart_rx_available()) {
+            char c;
+            while (dw_uart_getchar_nb(&c)) {
+                logger_info("(cpu: %d) Received char: '%c' (0x%02x)\n", get_current_cpu_id(), c, (unsigned char)c);
+            }
+        }
+        // 让出CPU给其他任务
         WFI();
-        // 检查是否有任务需要调度
-        // scheduler_schedule(cpu_id);
     }
     // ======================================
     // ======================================

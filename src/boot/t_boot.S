@@ -40,11 +40,11 @@ el1_start:
     movk x9, #0xfeb5, lsl #16
     lsr x19, x19, #8
     // ID Hi
-    add x10, x19, #48
-    str x10, [x9]
     mov x10, #72
     str x10, [x9]
     mov x10, #105
+    str x10, [x9]
+    mov x10, #13      // '\r'
     str x10, [x9]
     mov x10, #10
     str x10, [x9]

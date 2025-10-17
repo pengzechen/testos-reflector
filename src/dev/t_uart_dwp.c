@@ -93,14 +93,15 @@ dw_uart_enable_rx_interrupt(void)
 void
 dw_uart_interrupt_handler(uint64_t *stack_pointer)
 {
-    logger_info("Uart handler invoke...\n");
+    // logger_info("Uart handler invoke...\n");
     
     uint32_t iir = read32((void *) DW_UART_IIR) & 0xF;
     if (iir == 0x4) {  // RX 有人按下了键盘的键， 可以读数据了
-    
+        
         spin_lock_irqsave(&rx_buffer.lock);
         while (dw_uart_rx_ready()) {
             char c = (char) read32((void *) DW_UART_RBR);
+            logger_info("got key: %c\n", c);
             buffer_put(&rx_buffer, c);
         }
         spin_unlock_irqrestore(&rx_buffer.lock);
@@ -176,15 +177,20 @@ dw_uart_init(void)
     // 使能 RX 中断
     dw_uart_enable_rx_interrupt();
 
-    gicv3_enable_int(DW_UART_IRQ, true); 
+    dw_uart_enable_tx_interrupt();
 
-    gicv3_set_int_trigger(DW_UART_IRQ, 1); // 设置为电平触发
+
+    gicv3_set_int_trigger(DW_UART_IRQ, 0); // 设置为电平触发
+
+    gicv3_set_int_target(DW_UART_IRQ, 0x1); // 目标 CPU 0
+
+    gicv3_enable_int(DW_UART_IRQ, true); 
 
     if (gicv3_is_int_enabled(DW_UART_IRQ)) {
         logger_warn("DW UART IRQ %d is enabled in GICv3\n", DW_UART_IRQ);
     }
 
-    // dw_uart_initialized = true;
+    dw_uart_initialized = true;
 
     logger_info("DWC UART interrupt driver initialized\n");
 }
@@ -196,6 +202,21 @@ dw_uart_putchar_nb(char c)
         return false;
     spin_lock_irqsave(&tx_buffer.lock);
     bool success = false;
+
+    // 处理换行：如果是 '\n'，先尝试发送 '\r'
+    if (c == '\n') {
+        if (buffer_is_empty(&tx_buffer) && dw_uart_tx_ready()) {
+            write32((uint32_t) '\r', (void *) DW_UART_THR);
+        } else {
+            if (!buffer_put(&tx_buffer, '\r')) {
+                // 缓冲区满，先发送 '\r' 失败
+                spin_unlock_irqrestore(&tx_buffer.lock);
+                return false;
+            }
+            dw_uart_enable_tx_interrupt();
+        }
+    }
+
     if (buffer_is_empty(&tx_buffer) && dw_uart_tx_ready()) {
         // 发送缓冲区满了，并且硬件可以发送新数据
         // 直接发送

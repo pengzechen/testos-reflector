@@ -26,7 +26,7 @@
 
 // UART configuration for rk3588
 #define UART_BASE 0xfeb50000
-#define UART_IRQ  333
+#define UART_IRQ  (333 + 32)
 
 // GIC configuration for rk3588
 #define GICD_BASE_ADDR 0xfe600000  // GIC Distributor base address

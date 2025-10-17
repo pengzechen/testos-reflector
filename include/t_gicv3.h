@@ -14,7 +14,9 @@
 #define GICD_ISENABLERn(n) (GICD_BASE_ADDR + 0x100 + (n) * 4)
 #define GICD_ICENABLERn(n) (GICD_BASE_ADDR + 0x180 + (n) * 4)
 
+
 #define GICD_IPRIORITYR(n) (GICD_BASE_ADDR + 0x400 + 4 * (n))
+#define GICD_ITARGETSR(n)  (GICD_BASE_ADDR + 0x800 + 4 * (n))
 #define GICD_ICFGR(n)      (GICD_BASE_ADDR + 0xc00 + 4 * (n))
 
 // GICD bits
@@ -56,6 +58,8 @@ bool
 gicv3_is_int_enabled(int int_id);
 void
 gicv3_set_int_trigger(uint32_t int_id, int edge);
+void
+gicv3_set_int_target(uint32_t int_id, uint8_t target_cpu_mask);
 void
 gicv3_write_eoir(uint32_t irqstat);
 uint32_t

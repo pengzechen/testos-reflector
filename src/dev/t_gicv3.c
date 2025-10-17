@@ -128,12 +128,27 @@ gicv3_set_int_trigger(uint32_t int_id, int edge)
     uint32_t reg   = int_id / 16;
     uint32_t shift = (int_id % 16) * 2;
 
-    uint32_t val = read32(GICD_ICFGR(reg));
+    uint32_t val = read32((void *) (uint64_t) GICD_ICFGR(reg));
     if (edge)
         val |= (1 << (shift + 1));  // 设置 bit1 = 1 → 边沿
     else
         val &= ~(1 << (shift + 1));  // 设置 bit1 = 0 → 电平
-    write32(val, GICD_ICFGR(reg));
+    write32(val, (void *) (uint64_t) GICD_ICFGR(reg));
+}
+
+void
+gicv3_set_int_target(uint32_t int_id, uint8_t target_cpu_mask)
+{
+    if (int_id < 32)
+        return;  // SGI/PPI 是 per-core，不用配置这里
+
+    uint32_t reg    = int_id / 4;  // 每个寄存器控制 4 个 SPI
+    uint32_t offset = int_id % 4;  // 在寄存器内的偏移
+    uint32_t val    = read32((void *) (uint64_t) GICD_ITARGETSR(reg));
+
+    val &= ~(0xFF << (offset * 8));                       // 清空原有目标
+    val |= ((uint32_t) target_cpu_mask << (offset * 8));  // 设置目标 CPU
+    write32(val, (void *) (uint64_t) GICD_ITARGETSR(reg));
 }
 
 uint32_t
