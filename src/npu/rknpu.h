@@ -68,5 +68,8 @@ typedef struct
 void
 rknpu_init(void);
 
+extern void
+rknpu_test();
+
 
 #endif  // __RKNPU_H__

@@ -220,7 +220,8 @@ t_kernel_main(void)
     // RKNPU 初始化测试
     rknpu_init();
 
-
+    // 测试
+    rknpu_test();
 
     while (1) {
         WFI();
