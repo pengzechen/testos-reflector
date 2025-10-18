@@ -4,10 +4,6 @@
 #include "rknpu.h"
 #include "lib/t_logger.h"
 
-#define RKNPU_JOB_PC       (1 << 0)
-#define RKNPU_JOB_BLOCK    (0 << 1)
-#define RKNPU_JOB_PINGPONG (1 << 2)
-
 
 void
 rknpu_test()
@@ -43,10 +39,5 @@ rknpu_test()
     submit.subcore_task[0].task_number = 1;
 
 
-    rknpu_submit_task(&task,
-                      &task,
-                      submit.task_start,
-                      submit.task_number,
-                      submit.core_mask,
-                      submit.timeout);
+    rknpu_submit_task(&submit);
 }
