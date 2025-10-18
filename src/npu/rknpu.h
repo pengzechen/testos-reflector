@@ -27,6 +27,13 @@
 #define RKNPU_WT_RD_AMOUNT      0x803C
 
 
+#define RKNPU_JOB_PC       (1 << 0)
+#define RKNPU_JOB_BLOCK    (0 << 1)
+#define RKNPU_JOB_PINGPONG (1 << 2)
+
+#define RKNPU_PC_DATA_EXTRA_AMOUNT 4
+
+
 typedef struct __attribute__((packed))
 {
     uint32_t flags;
@@ -70,6 +77,9 @@ rknpu_init(void);
 
 extern void
 rknpu_test();
+
+void
+rknpu_submit_task(npu_submit_t *submit);
 
 
 #endif  // __RKNPU_H__
