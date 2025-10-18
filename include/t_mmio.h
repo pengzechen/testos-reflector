@@ -2,7 +2,7 @@
 #define __MMIO_H__
 
 #include "t_types.h"
-
+#include "t_sysreg.h"
 
 static inline uint8_t
 read8(const volatile void *addr)
@@ -32,13 +32,17 @@ write16(uint16_t value, volatile void *addr)
 static inline uint32_t
 read32(const volatile void *addr)
 {
+    DSB_SY();
     return *(const volatile uint32_t *) addr;
+    DSB_SY();
 }
 
 static inline void
 write32(uint32_t value, volatile void *addr)
 {
+    DSB_SY();
     *(volatile uint32_t *) addr = value;
+    DSB_SY();
 }
 
 static inline uint64_t

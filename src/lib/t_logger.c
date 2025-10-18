@@ -45,10 +45,10 @@ typedef struct
 
 // 日志级别配置表
 static const log_config_t log_configs[] = {
-    [LOG_LEVEL_DEBUG]  = {NULL, false, false},  // 蓝色，无前缀
+    [LOG_LEVEL_DEBUG]  = {NULL, false, false},       // 蓝色，无前缀
     [LOG_LEVEL_INFO]   = {ANSI_GREEN, true, true},   // 绿色，带前缀
     [LOG_LEVEL_WARN]   = {ANSI_YELLOW, true, true},  // 黄色，带前缀
-    [LOG_LEVEL_ERROR]  = {NULL, true, true},     // 红色，带前缀
+    [LOG_LEVEL_ERROR]  = {ANSI_RED, true, true},     // 红色，带前缀
     [LOG_LEVEL_NORMAL] = {NULL, true, true},         // 无色，带前缀
 };
 
