@@ -7,6 +7,7 @@
 #include "t_exception.h"
 #include "t_gicv3.h"
 #include "rkpm.h"
+#include "t_timer.h"
 
 // 只初始化一个RKNPU设备
 
@@ -121,7 +122,9 @@ job_commit_pc(void    *task_ptr,
     logger_info("RKNPU: First task regcmd_addr=0x%llx, regcfg_amount=%d\n",
                 first_task->regcmd_addr,
                 first_task->regcfg_amount);
-
+    
+    // switch to slave mode
+    write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
 
     // 写regcmd地址和数据量
     write32(first_task->regcmd_addr, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
@@ -149,9 +152,32 @@ job_commit_pc(void    *task_ptr,
     return;
 }
 
+bool check_int_reg() {
+    uint32_t int_status = read32((void *) (NPU0_BASE + RKNPU_INT_STATUS));
+    if (int_status != 0) {
+        logger_info("RKNPU: Interrupt status: 0x%x\n", int_status);
+        return true;
+    }
+    return false;
+}
+
 void
 job_wait_complete(uint32_t core, uint32_t task_number, uint32_t tmo)
-{}
+{
+    (void)core;
+    do {
+        // 简单轮询中断状态寄存器
+        if (check_int_reg()) {
+            logger_info("RKNPU: Job completed successfully.\n");
+            return;
+        } else {
+            timer_delay_ms(1);
+            tmo--;
+        }
+    } while (tmo > 0);
+    logger_error("RKNPU: Job wait timeout.\n");
+    return;
+}
 
 
 void
