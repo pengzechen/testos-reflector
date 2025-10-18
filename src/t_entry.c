@@ -5,6 +5,7 @@
 #include "t_dw_uart.h"
 #include "t_timer.h"
 #include "npu/rknpu.h"
+#include "cru.h"
 
 #include "simplebash.h"
 #include "t_task.h"
@@ -239,6 +240,8 @@ t_kernel_main(void)
     logger_info("  Allocated 256 KB at %p\n", mem1);
     logger_info("  Allocated 512 KB at %p\n", mem2);
 
+    // 启用RK3588 NPU时钟
+    enable_rk3588_npu_clocks();
 
     // RKNPU 初始化测试
     rknpu_init();
