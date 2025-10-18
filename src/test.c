@@ -1,9 +1,24 @@
 
 
-#include "rkconfig.h"
-#include "rknpu.h"
+#include "npu/rkconfig.h"
+#include "npu/rknpu.h"
 #include "lib/t_logger.h"
 
+
+#define MAX_M 544
+#define MAX_K 4096 
+#define MAX_N 4096 
+
+// matrix A max size
+int8_t matrixA[(MAX_M*MAX_K)];
+
+// matrix B max size
+int8_t matrixB[(MAX_N*MAX_K)];
+
+// matrix C max size
+int32_t expected_result[MAX_M*MAX_N];
+
+uint64_t npu_regs[112];
 
 void
 rknpu_test()
