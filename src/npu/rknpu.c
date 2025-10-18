@@ -115,6 +115,14 @@ job_commit_pc(void    *task_ptr,
     int task_pp_en           = flags & RKNPU_JOB_PINGPONG ? 1 : 0;
     int pc_task_number_bits  = RK3588_CONFIG.pc_task_number_bits;
 
+    logger_info("RKNPU: Committed PC job: task_start=%d, task_number=%d\n",
+                task_start,
+                task_number);
+    logger_info("RKNPU: First task regcmd_addr=0x%llx, regcfg_amount=%d\n",
+                first_task->regcmd_addr,
+                first_task->regcfg_amount);
+
+
     // 写regcmd地址和数据量
     write32(first_task->regcmd_addr, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
     uint32_t data_amount =
@@ -133,12 +141,6 @@ job_commit_pc(void    *task_ptr,
     // 写task_base_addr
     write32((uint32_t) (uint64_t) task_ptr_phys, (void *) (NPU0_BASE + RKNPU_PC_DMA_BASE_ADDR));
 
-    logger_info("RKNPU: Committed PC job: task_start=%u, task_number=%u, core=%u, flags=0x%x\n",
-                task_start,
-                task_number,
-                core,
-                flags);
-
     //提交
 
     write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));
@@ -155,16 +157,16 @@ job_wait_complete(uint32_t core, uint32_t task_number, uint32_t tmo)
 void
 rknpu_submit_task(npu_submit_t *submit)
 {
-    uint32_t flags = submit->flags;
-    uint32_t tmo   = submit->timeout;
+    uint32_t flags       = submit->flags;
+    uint32_t tmo         = submit->timeout;
     uint32_t task_start  = submit->task_start;
     uint32_t task_number = submit->task_number;
 
     // 这里假设只使用核心0
-    uint32_t core        = 0x1;
-    
-    void    *task_ptr       = (void *) (uint64_t) submit->task_obj_addr;
-    void    *task_ptr_phys  = (void *) (uint64_t) submit->task_obj_addr;
+    uint32_t core = 0x1;
+
+    void *task_ptr      = (void *) (uint64_t) submit->task_obj_addr;
+    void *task_ptr_phys = (void *) (uint64_t) submit->task_obj_addr;
 
 
     job_commit_pc(task_ptr, task_ptr_phys, task_start, task_number, core, flags);

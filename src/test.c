@@ -2,57 +2,162 @@
 
 #include "npu/rkconfig.h"
 #include "npu/rknpu.h"
+#include "npu/rkmem.h"
+#include "npulib/npu_matmul.h"
+
 #include "lib/t_logger.h"
+#include "lib/t_string.h"
+#include "lib/rand.h"
 
+#define M 2
+#define K 3
+#define N 4
 
-#define MAX_M 544
-#define MAX_K 4096 
-#define MAX_N 4096 
+// matrix buffers
+static int8_t   matrixA[M * K];
+static int8_t   matrixB[N * K];
+static int32_t  expected_result[M * N];
+static uint64_t npu_regs[112];
 
-// matrix A max size
-int8_t matrixA[(MAX_M*MAX_K)];
-
-// matrix B max size
-int8_t matrixB[(MAX_N*MAX_K)];
-
-// matrix C max size
-int32_t expected_result[MAX_M*MAX_N];
-
-uint64_t npu_regs[112];
-
-void
-rknpu_test()
+// ======================================================
+// 工具函数
+// ======================================================
+uint32_t
+rknpu_get_dma_addr(void *addr)
 {
-    // 准备task
-    npu_task_t task;
-    task.flags       = 0;
-    task.op_idx      = 0;
-    task.enable_mask = 0x1;
-    task.int_mask    = 0x300;  // Wait for DPU to finish
-    task.int_clear   = INT_CLEAR_VALUE;
-    task.int_status  = 0;
+    uint64_t ptr_val = (uint64_t) addr;
 
-    task.regcfg_amount = 0x0;  // TODO
-    task.regcfg_offset = 0;
-    task.regcmd_addr   = 0x0;  // TODO
+    if (ptr_val >> 32) {
+        logger_warn("rknpu_get_dma_addr: address %p exceeds 32-bit range (high=0x%lx)",
+                    addr,
+                    (unsigned long) (ptr_val >> 32));
+    }
+    return (uint32_t) (ptr_val & 0xFFFFFFFFu);
+}
 
-    // 准备submit结构
-    npu_submit_t submit;
-    submit.flags        = RKNPU_JOB_PC | RKNPU_JOB_BLOCK | RKNPU_JOB_PINGPONG;
-    submit.timeout      = 1000;  // 1秒超时
-    submit.task_start   = 0;
-    submit.task_number  = 1;
-    submit.task_counter = 0;
-    submit.priority     = 0;
+// ======================================================
+// 软件矩阵计算（用于期望结果）
+// ======================================================
+static void
+matmul_int(int m, int k, int n, const int8_t *src0, const int8_t *src1, int32_t *dst)
+{
+    for (int i = 0; i < m; i++) {
+        for (int j = 0; j < n; j++) {
+            int32_t sum = 0;
+            for (int l = 0; l < k; l++) {
+                sum += (int32_t) (src0[i * k + l]) * (int32_t) (src1[j * k + l]);
+            }
+            dst[i * n + j] = sum;
+        }
+    }
+}
 
-    submit.task_obj_addr               = (uint64_t) (void *) &task;
-    submit.task_base_addr              = (uint64_t) (void *) &task;
-    submit.user_data                   = 0;
-    submit.core_mask                   = 0x1;  // 使用核心0
-    submit.fence_fd                    = -1;   // 不使用fence
-    submit.subcore_task[0].task_start  = 0;
-    submit.subcore_task[0].task_number = 1;
+// ======================================================
+// 数据准备（随机矩阵生成 + 内存布局转换）
+// ======================================================
+static void
+prepare_test_data(void *input, void *weights)
+{
+    memset(input, 0, M * K * sizeof(int8_t));
+    memset(weights, 0, N * K * sizeof(int8_t));
+    memset(expected_result, 0, sizeof(expected_result));
 
+    srand_tick();
+
+    for (int i = 0; i < M * K; i++)
+        matrixA[i] = (int8_t) rand_tick();
+    for (int i = 0; i < N * K; i++)
+        matrixB[i] = (int8_t) rand_tick();
+
+    int8_t *feature_data_int8 = (int8_t *) input;
+    int8_t *weights_int8      = (int8_t *) weights;
+
+    // 转换权重布局
+    for (int n = 1; n <= N; n++)
+        for (int k = 1; k <= K; k++)
+            weights_int8[weight_int8(K, n, k)] = matrixB[(n - 1) * K + (k - 1)];
+
+    // 转换输入布局
+    for (int m = 1; m <= M; m++)
+        for (int k = 1; k <= K; k++)
+            feature_data_int8[feature_data(K, M, 1, 16, k, m, 1)] = matrixA[(m - 1) * K + (k - 1)];
+
+    // 计算期望结果
+    matmul_int(M, K, N, matrixA, matrixB, expected_result);
+}
+
+// ======================================================
+// 主测试函数
+// ======================================================
+void
+rknpu_test(void)
+{
+    void       *regcmd  = rkmem_alloc(1024);
+    npu_task_t *tasks   = rkmem_alloc(sizeof(npu_task_t) * 10);
+    void       *input   = rkmem_alloc(M * K * sizeof(int8_t));
+    void       *weights = rkmem_alloc(N * K * sizeof(int8_t));
+    void       *output  = rkmem_alloc(M * N * sizeof(int32_t));
+
+    if (!regcmd || !tasks || !input || !weights || !output) {
+        logger_error("RKNPU Test: Memory allocation failed\n");
+        return;
+    }
+
+    uint32_t input_dma   = rknpu_get_dma_addr(input);
+    uint32_t weights_dma = rknpu_get_dma_addr(weights);
+    uint32_t output_dma  = rknpu_get_dma_addr(output);
+
+    matmul_params_t params = {
+        .m           = M,
+        .k           = K,
+        .n           = N,
+        .input_dma   = input_dma,
+        .weights_dma = weights_dma,
+        .output_dma  = output_dma,
+        .tasks       = (uint64_t *) &npu_regs,
+    };
+
+    if (gen_matmul_int8(&params) != 0) {
+        logger_error("RKNPU Test: gen_matmul_int8 failed\n");
+        return;
+    }
+
+    memcpy(regcmd, npu_regs, sizeof(npu_regs));
+
+    npu_task_t task = {
+        .flags         = 0,
+        .op_idx        = 0,
+        .enable_mask   = 0x1,
+        .int_mask      = 0x300,
+        .int_clear     = INT_CLEAR_VALUE,
+        .int_status    = 0,
+        .regcfg_amount = sizeof(npu_regs) / sizeof(uint64_t) - (RKNPU_PC_DATA_EXTRA_AMOUNT + 4),
+        .regcfg_offset = 0,
+        .regcmd_addr   = (uint64_t) regcmd,
+    };
+
+    prepare_test_data(input, weights);
+
+    npu_submit_t submit = {
+        .flags           = RKNPU_JOB_PC | RKNPU_JOB_BLOCK | RKNPU_JOB_PINGPONG,
+        .timeout         = 1000,
+        .task_start      = 0,
+        .task_number     = 1,
+        .task_counter    = 0,
+        .priority        = 0,
+        .task_obj_addr   = (uint64_t) &task,
+        .regcfg_obj_addr = 0,
+        .task_base_addr  = (uint64_t) &task,
+        .user_data       = 0,
+        .core_mask       = 0x1,
+        .fence_fd        = -1,
+    };
+
+    submit.subcore_task[0] = (npu_subcore_task_t) {.task_start = 0, .task_number = 1};
+    submit.subcore_task[1] = (npu_subcore_task_t) {.task_start = 1, .task_number = 0};
+    submit.subcore_task[2] = (npu_subcore_task_t) {.task_start = 2, .task_number = 0};
+    submit.subcore_task[3] = (npu_subcore_task_t) {.task_start = 0, .task_number = 0};
+    submit.subcore_task[4] = (npu_subcore_task_t) {.task_start = 0, .task_number = 0};
 
     rknpu_submit_task(&submit);
 }

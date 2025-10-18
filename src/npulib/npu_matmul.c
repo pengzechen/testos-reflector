@@ -18,10 +18,7 @@
  *
  */
 
-#include <stddef.h>
-#include <string.h>
 
-#include <stdio.h>
 
 #include "npu_hw.h"
 #include "npu_cna.h"

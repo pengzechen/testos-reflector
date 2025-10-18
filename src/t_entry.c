@@ -1,17 +1,19 @@
 
 #include "t_types.h"
 
-#include "lib/t_logger.h"
-
 #include "t_gicv3.h"
 #include "t_dw_uart.h"
 #include "t_timer.h"
+#include "npu/rknpu.h"
+
 #include "simplebash.h"
 #include "t_task.h"
-
 #include "t_sysreg.h"
 
-#include "npu/rknpu.h"
+
+#include "lib/t_logger.h"
+#include "lib/rand.h"
+#include "npu/rkmem.h"
 
 extern void
 __bss_start();
@@ -216,6 +218,27 @@ t_kernel_main(void)
     timer_enable();
     enable_interrupts();  // daifclr 2
     logger_info("After enabling interrupts\n");
+
+
+    // 随机数模块测试
+    srand_tick();
+    
+    logger_info("Random number test: %ld\n",rand_tick());
+    logger_info("Random number test: %ld\n",rand_tick());
+    logger_info("Random number test: %ld\n",rand_tick());
+    logger_info("Random number test: %ld\n",rand_tick());
+
+    // 申请内存测试
+    size_t heap_size = (1 << 28);  // 1 G
+    rkmem_init(heap_size);
+    
+    void *mem1 = rkmem_alloc(256 * 1024);  // 256 KB
+    void *mem2 = rkmem_alloc(512 * 1024);  // 512 KB
+    
+    logger_info("Memory allocation test:\n");
+    logger_info("  Allocated 256 KB at %p\n", mem1);
+    logger_info("  Allocated 512 KB at %p\n", mem2);
+
 
     // RKNPU 初始化测试
     rknpu_init();
