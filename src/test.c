@@ -9,8 +9,8 @@
 #include "lib/t_string.h"
 #include "lib/rand.h"
 
-#define M 2
-#define K 3
+#define M 4
+#define K 8
 #define N 4
 
 // matrix buffers
@@ -33,6 +33,30 @@ rknpu_get_dma_addr(void *addr)
                     (unsigned long) (ptr_val >> 32));
     }
     return (uint32_t) (ptr_val & 0xFFFFFFFFu);
+}
+
+static void log_matrix_int8(const char *name, int8_t *mat, int rows, int cols) {
+    logger_info("%s (%dx%d):\n", name, rows, cols);
+    for (int i = 0; i < rows; i++) {
+        char buf[512] = {0};
+        char *p = buf;
+        for (int j = 0; j < cols; j++) {
+            p += my_snprintf(p, sizeof(buf) - (p - buf), "%4d ", mat[i * cols + j]);
+        }
+        logger_info("%s\n", buf);  // 每行单独打印
+    }
+}
+
+static void log_matrix_int32(const char *name, int32_t *mat, int rows, int cols) {
+    logger_info("%s (%dx%d):\n", name, rows, cols);
+    for (int i = 0; i < rows; i++) {
+        char buf[1024] = {0};
+        char *p = buf;
+        for (int j = 0; j < cols; j++) {
+            p += my_snprintf(p, sizeof(buf) - (p - buf), "%6d ", mat[i * cols + j]);
+        }
+        logger_info("%s\n", buf);  // 每行单独打印
+    }
 }
 
 // ======================================================
@@ -83,7 +107,12 @@ prepare_test_data(void *input, void *weights)
             feature_data_int8[feature_data(K, M, 1, 16, k, m, 1)] = matrixA[(m - 1) * K + (k - 1)];
 
     // 计算期望结果
-    matmul_int(M, K, N, matrixA, matrixB, expected_result);
+    matmul_int(M,K,N,(int8_t *)&matrixA, (int8_t *)&matrixB, (int32_t *)&expected_result);
+
+    log_matrix_int8("Matrix A", matrixA, M, K);
+    log_matrix_int8("Matrix B", matrixB, N, K);
+
+    log_matrix_int32("Expected Result", expected_result, M, N);
 }
 
 // ======================================================
@@ -92,7 +121,7 @@ prepare_test_data(void *input, void *weights)
 void
 rknpu_test(void)
 {
-    void       *regcmd  = rkmem_alloc(1024);
+    void       *regcmd  = rkmem_alloc(1024);  // 8 * 112 = 896 bytes
     npu_task_t *tasks   = rkmem_alloc(sizeof(npu_task_t) * 10);
     void       *input   = rkmem_alloc(M * K * sizeof(int8_t));
     void       *weights = rkmem_alloc(N * K * sizeof(int8_t));
@@ -127,27 +156,28 @@ rknpu_test(void)
     npu_task_t task = {
         .flags         = 0,
         .op_idx        = 0,
-        .enable_mask   = 0x1,
-        .int_mask      = 0x300,
+        .enable_mask   = 0xd,
+        .int_mask      = 0x300, // wait for DPU to finish
         .int_clear     = INT_CLEAR_VALUE,
         .int_status    = 0,
         .regcfg_amount = sizeof(npu_regs) / sizeof(uint64_t) - (RKNPU_PC_DATA_EXTRA_AMOUNT + 4),
         .regcfg_offset = 0,
         .regcmd_addr   = (uint64_t) regcmd,
     };
+    memcpy(&tasks[0], &task, sizeof(npu_task_t));
 
     prepare_test_data(input, weights);
 
     npu_submit_t submit = {
         .flags           = RKNPU_JOB_PC | RKNPU_JOB_BLOCK | RKNPU_JOB_PINGPONG,
-        .timeout         = 1000,
+        .timeout         = 5000,
         .task_start      = 0,
         .task_number     = 1,
         .task_counter    = 0,
         .priority        = 0,
-        .task_obj_addr   = (uint64_t) &task,
+        .task_obj_addr   = (uint64_t) tasks,
         .regcfg_obj_addr = 0,
-        .task_base_addr  = (uint64_t) &task,
+        .task_base_addr  = (uint64_t) tasks,
         .user_data       = 0,
         .core_mask       = 0x1,
         .fence_fd        = -1,
@@ -160,4 +190,6 @@ rknpu_test(void)
     submit.subcore_task[4] = (npu_subcore_task_t) {.task_start = 0, .task_number = 0};
 
     rknpu_submit_task(&submit);
+
+    logger_warn("RkNPU submit task completed.\n");
 }
