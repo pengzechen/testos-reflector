@@ -64,6 +64,7 @@ peda-session-*.txt
 # QEMU files
 *.qcow2
 *.img
+*.uimg
 
 # Backup files
 *.bak
