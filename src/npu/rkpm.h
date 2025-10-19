@@ -198,7 +198,7 @@ power-management@fd8d8000 {
 
 #define NPU_ERR_TIMEOUT -110
 
-#define BIT(n) (1U << (n))
+
 
 
 #define PD_NPU    0

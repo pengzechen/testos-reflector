@@ -27,5 +27,6 @@ typedef unsigned long long paddr_t;  // Physical address type
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+#define BIT(n) (1U << (n))
 
 #endif
