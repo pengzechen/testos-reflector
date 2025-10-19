@@ -172,10 +172,10 @@ test_clk_npu_dsu0(void)
     // 3️⃣ 检查父时钟选择
     val             = read32((void *) (RK3588_CLKSEL_CON(73)));
     uint32_t parent = (val >> 7) & 0x7;  // bits 9:7
-    if (parent == 1)
-        logger_info("CLK_NPU_DSU0 parent is cpll (1).\n");
+    if (parent == 0)
+        logger_info("CLK_NPU_DSU0 parent is gpll (0).\n");
     else
-        logger_warn("CLK_NPU_DSU0 parent is NOT cpll, mux=%u.\n", parent);
+        logger_warn("CLK_NPU_DSU0 parent is NOT gpll, mux=%u.\n", parent);
 }
 
 void
@@ -190,7 +190,7 @@ enable_aclknpu_root() {
 	*/
     uint32_t val = read32((void *) (RK3588_CLKSEL_CON(73)));
     val &= ~(0x7 << 7);  // 清除 CLK_NPU_DSU0 的 mux 位
-    val |= 0x1 << 7;     // 选择 gpll(0) cpll(1)
+    val |= 0x0 << 7;     // 选择 gpll(0) cpll(1)
     write32(val, (void *) (RK3588_CLKSEL_CON(73)));
 
     /*

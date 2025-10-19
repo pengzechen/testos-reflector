@@ -242,7 +242,7 @@ t_kernel_main(void)
     logger_info("  Allocated 512 KB at %p\n", mem2);
     
     // scmi 时钟
-    // scmi_name_get(6);
+    enable_scmi_clock(6);
 
     // cru 时钟
     enable_rk3588_npu_clocks();
