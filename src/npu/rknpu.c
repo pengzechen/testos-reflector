@@ -131,8 +131,8 @@ job_done()
     logger_info("fuzz: %x\n", fuzz);
     // 0x300 come from task.int_mask
     if (fuzz != 0x300) {
-        logger_error("invalid irq status: %x\n", status);
-        logger_error("raw status: %x\n", read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS)));
+        logger_error("invalid irq status: 0x%x\n", status);
+        logger_error("raw status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS)));
         logger_error("task counter: %d\n", task_counter);
         write32(INT_CLEAR_VALUE, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
         return;
@@ -147,7 +147,7 @@ show_task_status(char *file, int line)
 {
     uint32_t status;
     status = read32((void *) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
-    logger_info("npu0 task status: %x, %s:%d\n", status, file, line);
+    logger_info("npu0 task status: 0x%x, %s:%d\n", status, file, line);
 }
 
 void
@@ -178,7 +178,7 @@ job_commit_pc(void    *task_ptr,
                 first_task->regcfg_amount);
 
     logger_info("first task addr: %p, last task addr: %p\n", first_task, last_task);
-    logger_info("int_mask: %x, int_clear: %x\n", first_task->int_mask, first_task->int_clear);
+    logger_info("int_mask: 0x%x, int_clear: 0x%x\n", first_task->int_mask, first_task->int_clear);
 
     // switch to slave mode
     write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
