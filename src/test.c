@@ -126,7 +126,7 @@ void
 rknpu_test(void)
 {
     void       *regcmd  = rkmem_alloc(1024);  // 8 * 112 = 896 bytes
-    npu_task_t *tasks   = rkmem_alloc(sizeof(npu_task_t) * 10);
+    npu_task_t *tasks   = rkmem_alloc(1024);
     void       *input   = rkmem_alloc(M * K * sizeof(int8_t));
     void       *weights = rkmem_alloc(N * K * sizeof(int8_t));
     void       *output  = rkmem_alloc(M * N * sizeof(int32_t));
@@ -135,7 +135,12 @@ rknpu_test(void)
         logger_error("RKNPU Test: Memory allocation failed\n");
         return;
     }
-
+    
+    memset(npu_regs, 0, sizeof(npu_regs));
+    memset(regcmd, 0, sizeof(1024));
+    memset(tasks, 0, 1024);
+    memset(input, 0, M * K * sizeof(int8_t));
+    memset(weights, 0, M * K * sizeof(int8_t));
     memset(output, 0, M * N * sizeof(int32_t));
 
     uint32_t input_dma   = rknpu_get_dma_addr(input);

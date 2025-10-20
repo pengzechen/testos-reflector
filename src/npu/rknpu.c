@@ -74,6 +74,7 @@ rknpu_init(void)
     rockchip_pm_power_domain_on(&pm, PD_NPU);
     rockchip_pm_power_domain_on(&pm, PD_NPUTOP);
     rockchip_pm_power_domain_on(&pm, PD_NPU1);
+    rockchip_pm_power_domain_on(&pm, PD_NPU2);
 
     logger_info("RKNPU: Power domains enabled.\n");
 
