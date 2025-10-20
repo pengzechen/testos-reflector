@@ -43,7 +43,7 @@ rknpu_validate_version();
 static void
 job_done();
 
-static int first_job_done = 0;
+static int job_done_num = 0;
 
 // ========== 公有函数定义 ==============
 
@@ -95,12 +95,24 @@ rknpu_init(void)
 static void
 job_done()
 {
-    // if (first_job_done) {
-        logger_info("RKNPU: Job completed, times: %d.\n", first_job_done);
-        first_job_done++;
-    // }
+    logger("RKNPU: Job completed, times: %d.\n", job_done_num);
+    job_done_num++;
+
+    uint32_t status;
+    status = read32((void *) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
+
+    uint32_t task_counter = status & RK3588_CONFIG.pc_task_number_mask;
+    logger_info("task counter: %d\n", task_counter);
 
     write32(INT_CLEAR_VALUE, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
+}
+
+void
+show_task_status(char *file, int line)
+{
+    uint32_t status;
+    status = read32((void *) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
+    logger_info("npu0 task status: %x, %s:%d\n", status, file, line);
 }
 
 void
@@ -129,7 +141,9 @@ job_commit_pc(void    *task_ptr,
     logger_info("RKNPU: First task regcmd_addr=0x%llx, regcfg_amount=%d\n",
                 first_task->regcmd_addr,
                 first_task->regcfg_amount);
-    
+
+    logger_info("first task addr: %p, last task addr: %p\n", first_task, last_task);
+
     // switch to slave mode
     write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
 
@@ -141,8 +155,9 @@ job_commit_pc(void    *task_ptr,
     write32(data_amount, (void *) (NPU0_BASE + RKNPU_PC_DATA_AMOUNT));
 
     // 写intmask
-    write32(last_task->int_mask, (void *) (NPU0_BASE + RKNPU_INT_MASK));
-    write32(first_task->int_mask, (void *) (NPU0_BASE + RKNPU_INT_MASK));
+    // write32(last_task->int_mask, (void *) (NPU0_BASE + RKNPU_INT_MASK));
+    write32(first_task->int_mask, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
+
 
     // 写task控制
     uint32_t pc_task_control = ((0x6 | task_pp_en) << pc_task_number_bits) | task_number;
@@ -158,7 +173,9 @@ job_commit_pc(void    *task_ptr,
     return;
 }
 
-bool check_int_reg() {
+bool
+check_int_reg()
+{
     uint32_t int_status = read32((void *) (NPU0_BASE + RKNPU_INT_STATUS));
     if (int_status != 0) {
         logger_info("RKNPU: Interrupt status: 0x%x\n", int_status);
@@ -170,7 +187,7 @@ bool check_int_reg() {
 void
 job_wait_complete(uint32_t core, uint32_t task_number, uint32_t tmo)
 {
-    (void)core;
+    (void) core;
     do {
         // 简单轮询中断状态寄存器
         if (check_int_reg()) {
@@ -200,21 +217,11 @@ rknpu_submit_task(npu_submit_t *submit)
     void *task_ptr      = (void *) (uint64_t) submit->task_obj_addr;
     void *task_ptr_phys = (void *) (uint64_t) submit->task_obj_addr;
 
-    uint32_t status;
-
-    status = read32((void*) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
-    logger_info("npu0 task status 1: %x\n", status);
-
-    // write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));
-    // write32(0x0, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));
-
-    status = read32((void*) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
-    logger_info("npu0 task status 2: %x\n", status);
+    show_task_status(__FILE__, __LINE__);
 
     job_commit_pc(task_ptr, task_ptr_phys, task_start, task_number, core, flags);
 
-    status = read32((void*) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
-    logger_info("npu0 task status 3: %x\n", status);
+    show_task_status(__FILE__, __LINE__);
 
-    job_wait_complete(core, task_number, tmo);
+    // job_wait_complete(core, task_number, tmo);
 }

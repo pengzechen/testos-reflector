@@ -35,11 +35,13 @@ rknpu_get_dma_addr(void *addr)
     return (uint32_t) (ptr_val & 0xFFFFFFFFu);
 }
 
-static void log_matrix_int8(const char *name, int8_t *mat, int rows, int cols) {
+static void
+log_matrix_int8(const char *name, int8_t *mat, int rows, int cols)
+{
     logger_info("%s (%dx%d):\n", name, rows, cols);
     for (int i = 0; i < rows; i++) {
-        char buf[512] = {0};
-        char *p = buf;
+        char  buf[512] = {0};
+        char *p        = buf;
         for (int j = 0; j < cols; j++) {
             p += my_snprintf(p, sizeof(buf) - (p - buf), "%4d ", mat[i * cols + j]);
         }
@@ -47,11 +49,13 @@ static void log_matrix_int8(const char *name, int8_t *mat, int rows, int cols) {
     }
 }
 
-static void log_matrix_int32(const char *name, int32_t *mat, int rows, int cols) {
+static void
+log_matrix_int32(const char *name, int32_t *mat, int rows, int cols)
+{
     logger_info("%s (%dx%d):\n", name, rows, cols);
     for (int i = 0; i < rows; i++) {
-        char buf[1024] = {0};
-        char *p = buf;
+        char  buf[1024] = {0};
+        char *p         = buf;
         for (int j = 0; j < cols; j++) {
             p += my_snprintf(p, sizeof(buf) - (p - buf), "%6d ", mat[i * cols + j]);
         }
@@ -107,7 +111,7 @@ prepare_test_data(void *input, void *weights)
             feature_data_int8[feature_data(K, M, 1, 16, k, m, 1)] = matrixA[(m - 1) * K + (k - 1)];
 
     // 计算期望结果
-    matmul_int(M,K,N,(int8_t *)&matrixA, (int8_t *)&matrixB, (int32_t *)&expected_result);
+    matmul_int(M, K, N, (int8_t *) &matrixA, (int8_t *) &matrixB, (int32_t *) &expected_result);
 
     log_matrix_int8("Matrix A", matrixA, M, K);
     log_matrix_int8("Matrix B", matrixB, N, K);
@@ -131,6 +135,8 @@ rknpu_test(void)
         logger_error("RKNPU Test: Memory allocation failed\n");
         return;
     }
+
+    memset(output, 0, M * N * sizeof(int32_t));
 
     uint32_t input_dma   = rknpu_get_dma_addr(input);
     uint32_t weights_dma = rknpu_get_dma_addr(weights);
@@ -157,7 +163,7 @@ rknpu_test(void)
         .flags         = 0,
         .op_idx        = 0,
         .enable_mask   = 0xd,
-        .int_mask      = 0x300, // wait for DPU to finish
+        .int_mask      = 0x300,  // wait for DPU to finish
         .int_clear     = INT_CLEAR_VALUE,
         .int_status    = 0,
         .regcfg_amount = sizeof(npu_regs) / sizeof(uint64_t) - (RKNPU_PC_DATA_EXTRA_AMOUNT + 4),
@@ -192,4 +198,20 @@ rknpu_test(void)
     rknpu_submit_task(&submit);
 
     logger_warn("RkNPU submit task completed.\n");
+
+    int      ret;
+    int32_t *output_data = (int32_t *) output;
+    for (int m = 1; m <= M; m++) {
+        for (int n = 1; n < N; n++) {
+            int32_t actual   = output_data[feature_data(N, M, 1, 4, n, m, 1)];
+            int32_t expected = expected_result[((m - 1) * N) + (n - 1)];
+            if (actual != expected) {
+                logger_info("mismatch m:%d n:%d  expected:%d acutal:%d \n", m, n, expected, actual);
+                ret = -1;
+            }
+        }
+    }
+    if (ret == 0) {
+        logger_info("Multiplication of [%d,%d] x [%d,%d] succesful \n", M, K, N, K);
+    }
 }

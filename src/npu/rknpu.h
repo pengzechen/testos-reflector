@@ -202,8 +202,10 @@ Task status.
 [12]: Indicate the first task's register is fetching;
 [13]: Indicate the last task's register is fetching.
 
-before: 01 01 0000 0000 0000
-after:  11 11 0000 0000 0000
+before: 5 000: 0101 
+after:  f 000: 1111 
+
+2 tasks:9 000: 1001 
 */
 
 #ifndef __RKNPU_H__
