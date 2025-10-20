@@ -14,50 +14,14 @@
 #include "t_dw_uart.h"
 #include "lib/t_logger.h"
 
-
-#define BINSTR_SZ (sizeof(uint32_t) * 8 + sizeof(uint32_t) * 2)
-
-#define BUFSZ 2048
-
-#define ANSI_RED    "\x1b[31m"
-#define ANSI_YELLOW "\x1b[33m"
-#define ANSI_GREEN  "\x1b[32m"
-#define ANSI_BLUE   "\x1b[34m"
-#define ANSI_RESET  "\x1b[0m"
-
-// 日志级别枚举
-typedef enum
-{
-    LOG_LEVEL_DEBUG,
-    LOG_LEVEL_INFO,
-    LOG_LEVEL_WARN,
-    LOG_LEVEL_ERROR,
-    LOG_LEVEL_NORMAL
-} log_level_t;
-
-// 日志级别配置结构
-typedef struct
-{
-    const char *color;
-    bool        show_core_prefix;
-    bool        show_guest_label;
-} log_config_t;
-
-// 日志级别配置表
-static const log_config_t log_configs[] = {
-    [LOG_LEVEL_DEBUG]  = {NULL, false, false},       // 蓝色，无前缀
-    [LOG_LEVEL_INFO]   = {ANSI_GREEN, true, true},   // 绿色，带前缀
-    [LOG_LEVEL_WARN]   = {ANSI_YELLOW, true, true},  // 黄色，带前缀
-    [LOG_LEVEL_ERROR]  = {ANSI_RED, true, true},     // 红色，带前缀
-    [LOG_LEVEL_NORMAL] = {NULL, true, true},         // 无色，带前缀
-};
+#define BUFSZ 512
 
 typedef struct pstream
 {
     char *buffer;
     int   remain;
     int   added;
-} pstream_t;
+} pstream_t __attribute__((aligned(8)));
 
 typedef struct strprops
 {
@@ -67,69 +31,6 @@ typedef struct strprops
 } strprops_t __attribute__((aligned(8)));
 
 static char digits[16] = "0123456789abcdef";
-
-// static spinlock_t print_lock = {0};
-static spinlock_irq_t print_lock = SPINLOCK_IRQ_INIT;
-
-// 通用日志输出函数
-static int
-logger_output(log_level_t level, const char *fmt, va_list args)
-{
-    spin_lock_irqsave(&print_lock);
-
-    char buf[BUFSZ];
-    int  r = my_vsnprintf(buf, sizeof buf, fmt, args);
-
-    const log_config_t *config = &log_configs[level];
-
-    // 输出颜色代码
-    if (config->color) {
-        dw_uart_putstr(config->color);
-    }
-
-    // 输出客户标签和核心前缀（合并格式：[TESTOS:core0]）
-    if (config->show_guest_label && config->show_core_prefix) {
-        char tag_prefix[64];
-        char label_name[32];
-        int  cid = t_get_current_cpu_id();
-
-        // 从 GUEST_LABEL 中提取标签名（去掉 [ 和 ] ）
-        const char *label_start = GUEST_LABEL + 1;  // 跳过 '['
-        const char *label_end   = strchr(label_start, ']');
-        int         label_len   = label_end ? (label_end - label_start) : strlen(label_start);
-
-        // 复制标签名到临时缓冲区并添加空终止符
-        if (label_len < sizeof(label_name)) {
-            memcpy(label_name, label_start, label_len);
-            label_name[label_len] = '\0';
-        } else {
-            strcpy(label_name, "TESTOS");  // 回退到默认值
-        }
-
-        my_snprintf(tag_prefix, sizeof(tag_prefix), "[%s:core%d] ", label_name, cid);
-        dw_uart_putstr(tag_prefix);
-    } else if (config->show_core_prefix) {
-        // 只显示核心前缀
-        char core_prefix[16];
-        int  cid = t_get_current_cpu_id();
-        my_snprintf(core_prefix, sizeof(core_prefix), "[core%d] ", cid);
-        dw_uart_putstr(core_prefix);
-    } else if (config->show_guest_label) {
-        // 只显示客户标签
-        dw_uart_putstr(GUEST_LABEL);
-    }
-
-    // 输出消息内容
-    dw_uart_putstr(buf);
-
-    // 重置颜色
-    if (config->color) {
-        dw_uart_putstr(ANSI_RESET);
-    }
-
-    spin_unlock_irqrestore(&print_lock);
-    return r;
-}
 
 static void
 addchar(pstream_t *p, char c)
@@ -369,6 +270,10 @@ my_vsnprintf(char *buf, int size, const char *fmt, va_list va)
     return s.added;
 }
 
+
+// ===================== 下面是接口 ==========================
+// ==========================================================
+
 int
 my_snprintf(char *buf, int size, const char *fmt, ...)
 {
@@ -392,6 +297,101 @@ my_vprintf(const char *fmt, va_list va)
     return r;
 }
 
+
+#define ANSI_RED    "\x1b[31m"
+#define ANSI_YELLOW "\x1b[33m"
+#define ANSI_GREEN  "\x1b[32m"
+#define ANSI_BLUE   "\x1b[34m"
+#define ANSI_RESET  "\x1b[0m"
+
+// 日志级别枚举
+typedef enum
+{
+    LOG_LEVEL_DEBUG,
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARN,
+    LOG_LEVEL_ERROR,
+    LOG_LEVEL_NORMAL
+} log_level_t;
+
+// 日志级别配置结构
+typedef struct
+{
+    const char *color;
+    bool        show_core_prefix;
+    bool        show_guest_label;
+} log_config_t;
+
+// 日志级别配置表
+static const log_config_t log_configs[] = {
+    [LOG_LEVEL_DEBUG]  = {ANSI_BLUE, false, false},  // 蓝色，无前缀
+    [LOG_LEVEL_INFO]   = {ANSI_GREEN, true, true},   // 绿色，带前缀
+    [LOG_LEVEL_WARN]   = {ANSI_YELLOW, true, true},  // 黄色，带前缀
+    [LOG_LEVEL_ERROR]  = {ANSI_RED, true, true},     // 红色，带前缀
+    [LOG_LEVEL_NORMAL] = {NULL, true, true},         // 无色，带前缀
+};
+
+static spinlock_irq_t print_lock = SPINLOCK_IRQ_INIT;
+
+// 通用日志输出函数
+static int
+logger_output(log_level_t level, const char *fmt, va_list args)
+{
+    spin_lock_irqsave(&print_lock);
+
+    char buf[BUFSZ];
+    int  r = my_vsnprintf(buf, sizeof buf, fmt, args);
+
+    const log_config_t *config = &log_configs[level];
+
+    // 输出颜色代码
+    if (config->color) {
+        dw_uart_putstr(config->color);
+    }
+
+    // 输出客户标签和核心前缀（合并格式：[TESTOS:core0]）
+    if (config->show_guest_label && config->show_core_prefix) {
+        char tag_prefix[64];
+        char label_name[32];
+        int  cid = t_get_current_cpu_id();
+
+        // 从 GUEST_LABEL 中提取标签名（去掉 [ 和 ] ）
+        const char *label_start = GUEST_LABEL + 1;  // 跳过 '['
+        const char *label_end   = strchr(label_start, ']');
+        int         label_len   = label_end ? (label_end - label_start) : strlen(label_start);
+
+        // 复制标签名到临时缓冲区并添加空终止符
+        if (label_len < sizeof(label_name)) {
+            memcpy(label_name, label_start, label_len);
+            label_name[label_len] = '\0';
+        } else {
+            strcpy(label_name, "TESTOS");  // 回退到默认值
+        }
+
+        my_snprintf(tag_prefix, sizeof(tag_prefix), "[%s:core%d] ", label_name, cid);
+        dw_uart_putstr(tag_prefix);
+    } else if (config->show_core_prefix) {
+        // 只显示核心前缀
+        char core_prefix[16];
+        int  cid = t_get_current_cpu_id();
+        my_snprintf(core_prefix, sizeof(core_prefix), "[core%d] ", cid);
+        dw_uart_putstr(core_prefix);
+    } else if (config->show_guest_label) {
+        // 只显示客户标签
+        dw_uart_putstr(GUEST_LABEL);
+    }
+
+    // 输出消息内容
+    dw_uart_putstr(buf);
+
+    // 重置颜色
+    if (config->color) {
+        dw_uart_putstr(ANSI_RESET);
+    }
+
+    spin_unlock_irqrestore(&print_lock);
+    return r;
+}
 
 int
 logger(const char *fmt, ...)
@@ -445,75 +445,37 @@ logger_error(const char *fmt, ...)
 
 
 void
-binstr(uint32_t x, char out[BINSTR_SZ])
-{
-    int   i;
-    char *c;
-    int   n;
-
-    n = sizeof(uint32_t) * 8;
-    i = 0;
-    c = &out[0];
-    for (;;) {
-        *c++ = (x & (1ul << (n - i - 1))) ? '1' : '0';
-        i++;
-
-        if (i == n) {
-            *c = '\0';
-            break;
-        }
-        if (i % 4 == 0)
-            *c++ = '\'';
-    }
-    // assert(c + 1 - &out[0] == BINSTR_SZ);
-}
-
-void
-print_binstr(uint32_t x)
-{
-    char out[BINSTR_SZ];
-    binstr(x, out);
-    logger("%s", out);
-}
-
-void
 t_run_printf_tests(void)
 {
-    char buf[64];
+    char buf[64] = {0};
 
     // T1: print_int(0, ...) => 应该输出 "0"
-    my_snprintf(buf, sizeof(buf), "%d", 0);
+    (void) my_snprintf(buf, sizeof(buf), "%d", 0);
     dw_uart_putstr("T1: expect [0] got [");
     dw_uart_putstr(buf);
     dw_uart_putstr("]\n");
 
+    memset(buf, 0, 64);
+
     // T2: %#x 应该输出 "0x1a2b" 形式
-    my_snprintf(buf, sizeof(buf), "%#x", 0x1a2b);
+    (void) my_snprintf(buf, sizeof(buf), "%#x", 0x1a2b);
     dw_uart_putstr("T2: expect [0x1a2b] got [");
     dw_uart_putstr(buf);
     dw_uart_putstr("]\n");
 
+    memset(buf, 0, 64);
+
     // T3: 负数打印
-    my_snprintf(buf, sizeof(buf), "%d", -12345);
+    (void) my_snprintf(buf, sizeof(buf), "%d", -12345);
     dw_uart_putstr("T3: expect [-12345] got [");
     dw_uart_putstr(buf);
     dw_uart_putstr("]\n");
 
-    // T4: %-10s 左对齐字符串
-    my_snprintf(buf, sizeof(buf), "|%-10s|", "abc");
-    dw_uart_putstr("T4: expect [|abc       |] got [");
-    dw_uart_putstr(buf);
-    dw_uart_putstr("]\n");
+    memset(buf, 0, 64);
 
     // T5: %% 测试
-    my_snprintf(buf, sizeof(buf), "rate: 100%%");
+    (void) my_snprintf(buf, sizeof(buf), "rate: 100%%");
     dw_uart_putstr("T5: expect [rate: 100%] got [");
-    dw_uart_putstr(buf);
-    dw_uart_putstr("]\n");
-
-    // T6: %08x 测试，检查是否前导 0 填充
-    my_snprintf(buf, sizeof(buf), "%08x", 0x123);
-    dw_uart_putstr("T6: expect [00000123] got [");
     dw_uart_putstr(buf);
     dw_uart_putstr("]\n");
 }

@@ -221,6 +221,8 @@ t_kernel_main(void)
     enable_interrupts();  // daifclr 2
     logger_info("After enabling interrupts\n");
 
+    t_run_printf_tests();
+
 
     // 随机数模块测试
     srand_tick();
