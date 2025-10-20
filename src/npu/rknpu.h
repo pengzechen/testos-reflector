@@ -185,6 +185,27 @@
 	};
 */
 
+/*
+
+RKNPU_PC_TASK_STATUS:
+
+RKNN_pc_task_status
+Address: Operational Base + offset (0x003C)
+Bit Attr Reset Value Description
+31:28 RO 0x0 reserved
+27:0 RW 0x0000000
+task_status
+Task status.
+[11:0]: Current task counter value;
+[12]: Indicate the first task is operating;
+[13]: Indicate the last task is operating;
+[12]: Indicate the first task's register is fetching;
+[13]: Indicate the last task's register is fetching.
+
+before: 01 01 0000 0000 0000
+after:  11 11 0000 0000 0000
+*/
+
 #ifndef __RKNPU_H__
 #define __RKNPU_H__
 

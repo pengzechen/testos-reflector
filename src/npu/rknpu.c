@@ -43,6 +43,8 @@ rknpu_validate_version();
 static void
 job_done();
 
+static int first_job_done = 0;
+
 // ========== 公有函数定义 ==============
 
 static void
@@ -93,7 +95,12 @@ rknpu_init(void)
 static void
 job_done()
 {
-    logger_info("RKNPU: Job completed.\n");
+    // if (first_job_done) {
+        logger_info("RKNPU: Job completed, times: %d.\n", first_job_done);
+        first_job_done++;
+    // }
+
+    write32(INT_CLEAR_VALUE, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
 }
 
 void
@@ -145,7 +152,6 @@ job_commit_pc(void    *task_ptr,
     write32((uint32_t) (uint64_t) task_ptr_phys, (void *) (NPU0_BASE + RKNPU_PC_DMA_BASE_ADDR));
 
     //提交
-
     write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));
     write32(0x0, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));
 
@@ -194,8 +200,21 @@ rknpu_submit_task(npu_submit_t *submit)
     void *task_ptr      = (void *) (uint64_t) submit->task_obj_addr;
     void *task_ptr_phys = (void *) (uint64_t) submit->task_obj_addr;
 
+    uint32_t status;
+
+    status = read32((void*) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
+    logger_info("npu0 task status 1: %x\n", status);
+
+    // write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));
+    // write32(0x0, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));
+
+    status = read32((void*) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
+    logger_info("npu0 task status 2: %x\n", status);
 
     job_commit_pc(task_ptr, task_ptr_phys, task_start, task_number, core, flags);
+
+    status = read32((void*) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
+    logger_info("npu0 task status 3: %x\n", status);
 
     job_wait_complete(core, task_number, tmo);
 }
