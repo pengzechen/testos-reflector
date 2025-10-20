@@ -193,6 +193,8 @@ t_second_kernel_main(void)
 void
 t_kernel_main(void)
 {
+    logger_info("Compiled on %s at %s\n", __DATE__, __TIME__);
+
     logger_info("bss start: %p, end: %p, size: %u KB\n",
                 &__bss_start,
                 &__bss_end,
