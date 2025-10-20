@@ -92,19 +92,54 @@ rknpu_init(void)
     }
 }
 
+static inline uint32_t
+rknpu_fuzz_status(uint32_t status)
+{
+    uint32_t fuzz_status = 0;
+
+    if ((status & 0x3) != 0)
+        fuzz_status |= 0x3;
+
+    if ((status & 0xc) != 0)
+        fuzz_status |= 0xc;
+
+    if ((status & 0x30) != 0)
+        fuzz_status |= 0x30;
+
+    if ((status & 0xc0) != 0)
+        fuzz_status |= 0xc0;
+
+    if ((status & 0x300) != 0)
+        fuzz_status |= 0x300;
+
+    if ((status & 0xc00) != 0)
+        fuzz_status |= 0xc00;
+
+    return fuzz_status;
+}
+
 static void
 job_done()
 {
-    logger("RKNPU: Job completed, times: %d.\n", job_done_num);
     job_done_num++;
 
     uint32_t status;
     status = read32((void *) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
 
     uint32_t task_counter = status & RK3588_CONFIG.pc_task_number_mask;
-    logger_info("task counter: %d\n", task_counter);
+    uint32_t fuzz = rknpu_fuzz_status(status);
+    logger_info("fuzz: %x\n", fuzz);
+    // 0x300 come from task.int_mask
+    if (fuzz != 0x300) {
+        logger_error("invalid irq status: %x\n", status);
+        logger_error("raw status: %x\n", read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS)));
+        logger_error("task counter: %d\n", task_counter);
+        write32(INT_CLEAR_VALUE, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
+        return;
+    }
 
     write32(INT_CLEAR_VALUE, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
+    logger("RKNPU: Job completed, times: %d.\n", job_done_num);
 }
 
 void
@@ -143,19 +178,25 @@ job_commit_pc(void    *task_ptr,
                 first_task->regcfg_amount);
 
     logger_info("first task addr: %p, last task addr: %p\n", first_task, last_task);
+    logger_info("int_mask: %x, int_clear: %x\n", first_task->int_mask, first_task->int_clear);
 
     // switch to slave mode
     write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
+
+
+    write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x1004)));
+    write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x3004)));
 
     // 写regcmd地址和数据量
     write32(first_task->regcmd_addr, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
     uint32_t data_amount =
         (first_task->regcfg_amount + RKNPU_PC_DATA_EXTRA_AMOUNT + pc_data_amount_scale - 1) /
-        pc_data_amount_scale;
+            pc_data_amount_scale -
+        1;
     write32(data_amount, (void *) (NPU0_BASE + RKNPU_PC_DATA_AMOUNT));
 
     // 写intmask
-    // write32(last_task->int_mask, (void *) (NPU0_BASE + RKNPU_INT_MASK));
+    write32(last_task->int_mask, (void *) (NPU0_BASE + RKNPU_INT_MASK));
     write32(first_task->int_mask, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
 
 
@@ -164,7 +205,8 @@ job_commit_pc(void    *task_ptr,
     write32(pc_task_control, (void *) (NPU0_BASE + RKNPU_PC_TASK_CONTROL));
 
     // 写task_base_addr
-    write32((uint32_t) (uint64_t) task_ptr_phys, (void *) (NPU0_BASE + RKNPU_PC_DMA_BASE_ADDR));
+    // 反编译demo写的是0
+    write32(0, (void *) (NPU0_BASE + RKNPU_PC_DMA_BASE_ADDR));
 
     //提交
     write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));

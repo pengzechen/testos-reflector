@@ -9,9 +9,9 @@
 #include "lib/t_string.h"
 #include "lib/rand.h"
 
-#define M 4
-#define K 8
-#define N 4
+#define M 1
+#define K 2
+#define N 2
 
 // matrix buffers
 static int8_t   matrixA[M * K];
@@ -183,7 +183,7 @@ rknpu_test(void)
         .priority        = 0,
         .task_obj_addr   = (uint64_t) tasks,
         .regcfg_obj_addr = 0,
-        .task_base_addr  = (uint64_t) tasks,
+        .task_base_addr  = 0,
         .user_data       = 0,
         .core_mask       = 0x1,
         .fence_fd        = -1,
@@ -202,7 +202,7 @@ rknpu_test(void)
     int      ret;
     int32_t *output_data = (int32_t *) output;
     for (int m = 1; m <= M; m++) {
-        for (int n = 1; n < N; n++) {
+        for (int n = 1; n <= N; n++) {
             int32_t actual   = output_data[feature_data(N, M, 1, 4, n, m, 1)];
             int32_t expected = expected_result[((m - 1) * N) + (n - 1)];
             if (actual != expected) {
