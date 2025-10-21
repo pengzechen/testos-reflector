@@ -16,8 +16,8 @@ void rkmem_init(size_t heap_size)
 
 void *rkmem_alloc(size_t size)
 {
-    // 简单 1024 字节对齐
-    size = (size + 1023) & ~1023;
+    // 简单 4095 字节对齐
+    size = (size + 4095) & ~4095;
 
     if (heap_ptr + size > heap_end) {
         // 堆已满
