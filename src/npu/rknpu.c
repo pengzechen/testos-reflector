@@ -3,6 +3,8 @@
 #include "rkconfig.h"
 #include "rknpu.h"
 #include "lib/t_logger.h"
+#include "t_dw_uart.h"
+#include "lib/t_string.h"
 #include "t_mmio.h"
 #include "t_exception.h"
 #include "t_gicv3.h"
@@ -46,6 +48,74 @@ job_done();
 static int job_done_num = 0;
 
 // ========== 公有函数定义 ==============
+
+#define NPU_REG_NUM 112
+#define LINE_REGS   4  // 每行打印几个寄存器
+
+static size_t u64_to_hex(uint64_t val, char *buf, size_t buf_size)
+{
+    const char hex[] = "0123456789abcdef";
+    char tmp[16];
+    int i = 0;
+    size_t len = 0;
+
+    if (buf_size < 3)
+        return 0;
+
+    buf[len++] = '0';
+    buf[len++] = 'x';
+
+    if (val == 0) {
+        buf[len++] = '0';
+        buf[len] = '\0';
+        return len;
+    }
+
+    while (val && i < 16) {
+        tmp[i++] = hex[val & 0xF];
+        val >>= 4;
+    }
+
+    for (int j = i - 1; j >= 0 && len < buf_size - 1; j--) {
+        buf[len++] = tmp[j];
+    }
+
+    buf[len] = '\0';
+    return len;
+}
+
+void dump_reg(uint64_t *addr)
+{
+    char line[512];   // 一整行缓冲
+    char hexbuf[64];
+    size_t pos;
+
+    for (int i = 0; i < NPU_REG_NUM; i += LINE_REGS) {
+        pos = 0;
+
+        for (int j = 0; j < LINE_REGS && (i + j) < NPU_REG_NUM; j++) {
+            u64_to_hex(addr[i + j], hexbuf, sizeof(hexbuf));
+
+            // 拼接到行缓冲
+            for (int k = 0; hexbuf[k] != '\0' && pos < sizeof(line) - 1; k++)
+                line[pos++] = hexbuf[k];
+
+            if (j != LINE_REGS - 1 && (i + j + 1) < NPU_REG_NUM) {
+                if (pos < sizeof(line) - 2) {
+                    line[pos++] = ',';
+                    line[pos++] = ' ';
+                }
+            }
+        }
+
+        if (pos < sizeof(line) - 1)
+            line[pos++] = '\n';
+        line[pos] = '\0';
+
+        dw_uart_putstr(line);
+        memset(line, 0, 512);
+    }
+}
 
 static void
 rknpu_validate_version()
@@ -129,7 +199,7 @@ job_done()
     status = read32((void *) (NPU0_BASE + RKNPU_INT_STATUS));
 
     uint32_t task_counter = status & RK3588_CONFIG.pc_task_number_mask;
-    uint32_t fuzz = rknpu_fuzz_status(status);
+    uint32_t fuzz         = rknpu_fuzz_status(status);
     logger_info("fuzz: %x\n", fuzz);
     // 0x300 come from task.int_mask
     if (fuzz != 0x300) {
@@ -140,7 +210,7 @@ job_done()
         return;
     }
 
-    
+
     logger_info("status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_STATUS)));
     logger_info("row status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS)));
     write32(INT_CLEAR_VALUE, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
@@ -192,6 +262,8 @@ job_commit_pc(void    *task_ptr,
     write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x1004)));
     write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x3004)));
 
+    logger_info("reg addr: %x\n", first_task->regcmd_addr);
+    // dump_reg(first_task->regcmd_addr);
     // 写regcmd地址和数据量
     write32(first_task->regcmd_addr, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
     uint32_t data_amount =

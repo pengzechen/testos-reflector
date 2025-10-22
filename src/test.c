@@ -124,21 +124,26 @@ rknpu_test(void)
 
     void       *regcmd  = rkmem_alloc(1024);  // 8 * 112 = 896 bytes
     npu_task_t *tasks   = rkmem_alloc(1024);
-    void       *input   = (void *) 0xffffd000;  //rkmem_alloc(M * K * sizeof(int8_t));
-    void       *weights = (void *) 0xffffe000;  //rkmem_alloc(N * K * sizeof(int8_t));
-    void       *output  = (void *) 0xfffff000;  //rkmem_alloc(M * N * sizeof(int32_t));
-    // void       *input   = (void *) rkmem_alloc(M * K * sizeof(int8_t));
-    // void       *weights = (void *) rkmem_alloc(N * K * sizeof(int8_t));
-    // void       *output  = (void *) rkmem_alloc(M * N * sizeof(int32_t));
+    // void       *input   = (void *) 0xffff0000;  //rkmem_alloc(M * K * sizeof(int8_t));
+    // void       *weights = (void *) 0xffff2000;  //rkmem_alloc(N * K * sizeof(int8_t));
+    // void       *output  = (void *) 0xffff4000;  //rkmem_alloc(M * N * sizeof(int32_t));
+    void       *input   = (void *) rkmem_alloc(M * K * sizeof(int8_t));
+    void       *weights = (void *) rkmem_alloc(N * K * sizeof(int8_t));
+    void       *output  = (void *) rkmem_alloc(M * N * sizeof(int32_t));
+    
+    uint32_t input_dma   = rknpu_get_dma_addr(input);
+    uint32_t weights_dma = rknpu_get_dma_addr(weights);
+    uint32_t output_dma  = rknpu_get_dma_addr(output);
+
+    logger_info("input dma is %lx, output dma is %lx, weights dma is %lx\n",
+           input_dma,
+           output_dma,
+           weights_dma);
 
     if (!regcmd || !tasks || !input || !weights || !output) {
         logger_error("RKNPU Test: Memory allocation failed\n");
         return;
     }
-
-    uint32_t input_dma   = rknpu_get_dma_addr(input);
-    uint32_t weights_dma = rknpu_get_dma_addr(weights);
-    uint32_t output_dma  = rknpu_get_dma_addr(output);
 
     matmul_params_t params = {
         .m           = M,
@@ -166,7 +171,7 @@ rknpu_test(void)
         .int_status    = 0,
         .regcfg_amount = sizeof(npu_regs) / sizeof(uint64_t) - (RKNPU_PC_DATA_EXTRA_AMOUNT + 4),
         .regcfg_offset = 0,
-        .regcmd_addr   = regcmd,
+        .regcmd_addr   = (uint64_t) regcmd,
     };
     memcpy(&tasks[0], &task, sizeof(npu_task_t));
 
@@ -174,7 +179,6 @@ rknpu_test(void)
     memset((void *) input, 0, M * K * sizeof(int8_t));
     memset((void *) weights, 0, K * N * sizeof(int8_t));
     memset((void *) output, 0, M * N * sizeof(int32_t));
-
 
 
     srand_tick();
@@ -207,21 +211,21 @@ rknpu_test(void)
     matmul_int(M, K, N, (int8_t *) &matrixA, (int8_t *) &matrixB, (int32_t *) &expected_result);
 
 
-    // int ret0 = 0;
-    // int32_t *output_data = (int32_t *) output;
-    // for (int m = 1; m <= M; m++) {
-    //     for (int n = 1; n < N; n++) {
-    //         int32_t actual   = output_data[feature_data(N, M, 1, 4, n, m, 1)];
-    //         int32_t expected = expected_result[((m - 1) * N) + (n - 1)];
-    //         if (actual != expected) {
-    //             logger_info("mismatch m:%d n:%d  expected:%d acutal:%d \n", m, n, expected, actual);
-    //             ret0 = -1;
-    //         }
-    //     }
-    // }
-    // if (ret0 == 0) {
-    //     logger_info("Multiplication of [%d,%d] x [%d,%d] succesful \n", M, K, N, K);
-    // }
+    int ret0 = 0;
+    int32_t *output_data = (int32_t *) output;
+    for (int m = 1; m <= M; m++) {
+        for (int n = 1; n < N; n++) {
+            int32_t actual   = output_data[feature_data(N, M, 1, 4, n, m, 1)];
+            int32_t expected = expected_result[((m - 1) * N) + (n - 1)];
+            if (actual != expected) {
+                logger_info("mismatch m:%d n:%d  expected:%d acutal:%d \n", m, n, expected, actual);
+                ret0 = -1;
+            }
+        }
+    }
+    if (ret0 == 0) {
+        logger_info("Multiplication of [%d,%d] x [%d,%d] succesful \n", M, K, N, K);
+    }
 
     npu_submit_t submit = {
         .flags           = RKNPU_JOB_PC | RKNPU_JOB_BLOCK | RKNPU_JOB_PINGPONG,
@@ -248,14 +252,14 @@ rknpu_test(void)
 
     logger_warn("RkNPU submit task completed.\n");
 
-    int ret = 0;
+    int      ret          = 0;
     int32_t *output_data0 = (int32_t *) output;
     for (int m = 1; m <= M; m++) {
         for (int n = 1; n <= N; n++) {
             int32_t actual   = output_data0[feature_data(N, M, 1, 4, n, m, 1)];
             int32_t expected = expected_result[((m - 1) * N) + (n - 1)];
             if (actual != expected) {
-                logger_info("mismatch m:%d n:%d  expected:%d acutal:%d \n", m, n, expected, actual);
+                logger_info("mismatch m:%d n:%d  expected:%x acutal:%x \n", m, n, expected, actual);
                 ret = -1;
             }
         }
