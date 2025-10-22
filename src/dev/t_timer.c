@@ -4,6 +4,7 @@
 #include "lib/t_logger.h"
 
 #include "t_exception.h"
+#include "lib/rand.h"
 
 // 调度器函数声明（在task模块中实现）
 extern void
@@ -100,6 +101,7 @@ timer_handler(uint64_t *stack_pointer)
     (void) stack_pointer;  // Suppress unused parameter warning
 
     // logger_info("Timer interrupt handler invoked\n");
+    srand_tick();
 
     // 更新系统tick计数
     g_system_ticks++;
