@@ -1,11 +1,12 @@
 #include "lib/rand.h"
 #include "t_timer.h"
+#include "t_sysreg.h"
 
 static uint32_t rand_seed = 0;
 
 void srand_tick(void)
 {
-    uint64_t t = timer_get_system_ticks();
+    uint64_t t = READ_CNTPCT_EL0();
     // 将 tick 混合成 32bit 种子
     rand_seed ^= (uint32_t)t ^ (uint32_t)(t >> 32);
     rand_seed ^= (rand_seed << 13);

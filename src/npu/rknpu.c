@@ -84,23 +84,23 @@ static size_t u64_to_hex(uint64_t val, char *buf, size_t buf_size)
     return len;
 }
 
-void dump_reg(uint64_t *addr)
+void dump_reg(uint64_t *addr, int nums)
 {
     char line[512];   // 一整行缓冲
     char hexbuf[64];
     size_t pos;
 
-    for (int i = 0; i < NPU_REG_NUM; i += LINE_REGS) {
+    for (int i = 0; i < nums; i += LINE_REGS) {
         pos = 0;
 
-        for (int j = 0; j < LINE_REGS && (i + j) < NPU_REG_NUM; j++) {
+        for (int j = 0; j < LINE_REGS && (i + j) < nums; j++) {
             u64_to_hex(addr[i + j], hexbuf, sizeof(hexbuf));
 
             // 拼接到行缓冲
             for (int k = 0; hexbuf[k] != '\0' && pos < sizeof(line) - 1; k++)
                 line[pos++] = hexbuf[k];
 
-            if (j != LINE_REGS - 1 && (i + j + 1) < NPU_REG_NUM) {
+            if (j != LINE_REGS - 1 && (i + j + 1) < nums) {
                 if (pos < sizeof(line) - 2) {
                     line[pos++] = ',';
                     line[pos++] = ' ';
@@ -263,7 +263,7 @@ job_commit_pc(void    *task_ptr,
     write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x3004)));
 
     logger_info("reg addr: %x\n", first_task->regcmd_addr);
-    // dump_reg(first_task->regcmd_addr);
+    // dump_reg(first_task->regcmd_addr, NPU_REG_NUM);
     // 写regcmd地址和数据量
     write32(first_task->regcmd_addr, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
     uint32_t data_amount =

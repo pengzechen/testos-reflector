@@ -103,8 +103,8 @@ void
 rknpu_test(void)
 {
     unsigned int M = 1;
-    unsigned int K = 64;
-    unsigned int N = 64;
+    unsigned int K = 32;
+    unsigned int N = 32;
 
     if ((M <= 0) || (M > MAX_M) | (((M % 4) != 0) && (M != 1))) {
         logger_error("M [%d] is out of range or not a mutliple of 4 \n", M);
@@ -267,4 +267,9 @@ rknpu_test(void)
     if (ret == 0) {
         logger_info("Multiplication of [%d,%d] x [%d,%d] succesful \n", M, K, N, K);
     }
+
+    logger_info("except raw:\n");
+    dump_reg((uint64_t*)expected_result, (M*N)/2);
+    logger_info("actual raw:\n");
+    dump_reg(output, (M*N)/2);
 }

@@ -290,5 +290,7 @@ rknpu_test();
 void
 rknpu_submit_task(npu_submit_t *submit);
 
+void
+dump_reg(uint64_t *addr, int nums);
 
 #endif  // __RKNPU_H__
