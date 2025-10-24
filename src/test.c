@@ -42,7 +42,7 @@ rknpu_get_dma_addr(void *addr)
     return (uint32_t) (ptr_val & 0xFFFFFFFFu);
 }
 
-static void
+void
 log_matrix_int8(const char *name, int8_t *mat, int rows, int cols)
 {
     logger_info("%s (%dx%d):\n", name, rows, cols);
@@ -56,7 +56,7 @@ log_matrix_int8(const char *name, int8_t *mat, int rows, int cols)
     }
 }
 
-static void
+void
 log_matrix_int32(const char *name, int32_t *mat, int rows, int cols)
 {
     logger_info("%s (%dx%d):\n", name, rows, cols);

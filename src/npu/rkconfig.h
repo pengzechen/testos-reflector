@@ -11,10 +11,6 @@
  */
 
 /// NPU 核心寄存器基地址
-/// 来自设备树: npu@fdab0000
-/// reg = <0x00 0xfdab0000 0x00 0x10000>    # NPU0 核心
-///       <0x00 0xfdac0000 0x00 0x10000>    # NPU1 核心
-///       <0x00 0xfdad0000 0x00 0x10000>;   # NPU2 核心
 #define NPU0_BASE 0xFDAB0000UL
 #define NPU1_BASE 0xFDAC0000UL
 #define NPU2_BASE 0xFDAD0000UL

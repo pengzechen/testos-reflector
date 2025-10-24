@@ -101,7 +101,6 @@ timer_handler(uint64_t *stack_pointer)
     (void) stack_pointer;  // Suppress unused parameter warning
 
     // logger_info("Timer interrupt handler invoked\n");
-    srand_tick();
 
     // 更新系统tick计数
     g_system_ticks++;

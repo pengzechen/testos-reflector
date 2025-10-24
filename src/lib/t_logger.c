@@ -444,6 +444,75 @@ logger_error(const char *fmt, ...)
 }
 
 
+#define LINE_REGS   4  // 每行打印几个寄存器
+
+size_t
+u64_to_hex(uint64_t val, char *buf, size_t buf_size)
+{
+    const char hex[] = "0123456789abcdef";
+    char       tmp[16];
+    int        i   = 0;
+    size_t     len = 0;
+
+    if (buf_size < 3)
+        return 0;
+
+    buf[len++] = '0';
+    buf[len++] = 'x';
+
+    if (val == 0) {
+        buf[len++] = '0';
+        buf[len]   = '\0';
+        return len;
+    }
+
+    while (val && i < 16) {
+        tmp[i++] = hex[val & 0xF];
+        val >>= 4;
+    }
+
+    for (int j = i - 1; j >= 0 && len < buf_size - 1; j--) {
+        buf[len++] = tmp[j];
+    }
+
+    buf[len] = '\0';
+    return len;
+}
+
+void
+dumpmem_as_u64(uint64_t *addr, int nums)
+{
+    char   line[512];  // 一整行缓冲
+    char   hexbuf[64];
+    size_t pos;
+
+    for (int i = 0; i < nums; i += LINE_REGS) {
+        pos = 0;
+
+        for (int j = 0; j < LINE_REGS && (i + j) < nums; j++) {
+            u64_to_hex(addr[i + j], hexbuf, sizeof(hexbuf));
+
+            // 拼接到行缓冲
+            for (int k = 0; hexbuf[k] != '\0' && pos < sizeof(line) - 1; k++)
+                line[pos++] = hexbuf[k];
+
+            if (j != LINE_REGS - 1 && (i + j + 1) < nums) {
+                if (pos < sizeof(line) - 2) {
+                    line[pos++] = ',';
+                    line[pos++] = ' ';
+                }
+            }
+        }
+
+        if (pos < sizeof(line) - 1)
+            line[pos++] = '\n';
+        line[pos] = '\0';
+
+        dw_uart_putstr(line);
+        memset(line, 0, 512);
+    }
+}
+
 void
 t_run_printf_tests(void)
 {

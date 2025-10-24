@@ -8,7 +8,6 @@
 #include "cru.h"
 #include "scmi.h"
 
-#include "simplebash.h"
 #include "t_task.h"
 #include "t_sysreg.h"
 
@@ -51,30 +50,6 @@ test_task2_entry(void *arg)
     task_exit();
 }
 
-// Shell任务入口函数
-void
-shell_task_entry(void *arg)
-{
-    (void) arg;  // 未使用的参数
-
-    uint32_t cpu_id = get_current_cpu_id();
-    logger_info("Shell task started on CPU %u\n", cpu_id);
-
-    // Initialize the shell
-    simplebash_init();
-
-    // Main shell loop
-    while (1) {
-        // Check if there's input available and process it
-        if (dw_uart_rx_available()) {
-            simplebash_run();
-        } else {
-            // 让出CPU给其他任务
-            task_yield();
-        }
-    }
-}
-
 // 所有核的入口函数
 void
 t_main_entry()
@@ -101,7 +76,6 @@ t_main_entry()
     if (cpu_id == 0) {
         task_t *test1 = task_create("test1", test_task1_entry, NULL, 0);
         task_t *test2 = task_create("test2", test_task2_entry, NULL, 0);
-        task_t *shell = task_create("shell", shell_task_entry, NULL, 0);
 
         if (!test1) {
             logger_error("Failed to create test task 1\n");
@@ -113,12 +87,6 @@ t_main_entry()
             logger_error("Failed to create test task 2\n");
         } else {
             logger_info("Created test task 2 on CPU 0\n");
-        }
-
-        if (!shell) {
-            logger_error("Failed to create shell task\n");
-        } else {
-            logger_info("Created shell task on CPU 0\n");
         }
     }
 
@@ -137,40 +105,9 @@ t_main_entry()
 }
 
 
-static inline unsigned
-read_currentel(void)
-{
-    unsigned el;
-    asm volatile("mrs %0, CurrentEL" : "=r"(el));
-    return (el >> 2) & 0x3;
-}
-
-
 // SMP函数声明
 extern void
 start_secondary_cpus(void);
-
-void
-t_main_entry2()
-{
-    uint32_t cpu_id = get_current_cpu_id();
-    // 启用定时器
-    timer_enable();
-
-    // 启用中断
-    logger_info("Enabling interrupts on CPU %u\n", cpu_id);
-    enable_interrupts();
-
-    simplebash_init();
-    while (1) {
-        if (dw_uart_rx_available()) {
-            simplebash_run();
-        } else {
-            // 让出CPU给其他任务
-            WFI();
-        }
-    }
-}
 
 // 副核CPU核心的入口函数
 void
@@ -187,8 +124,6 @@ t_second_kernel_main(void)
 }
 
 
-
-
 // 主内核入口函数
 void
 t_kernel_main(void)
@@ -199,12 +134,12 @@ t_kernel_main(void)
                 &__bss_start,
                 &__bss_end,
                 ((uint64_t) &__bss_end - (uint64_t) &__bss_start) / 1024);
-    
+
     logger_info("heap flag address: %p\n", &__heap_flag);
 
 
     // 在 main 里打印
-    logger_warn("CurrentEL = %u\n", read_currentel());
+    logger_warn("CurrentEL = %u\n", READ_CURRENTEL());
 
     // 初始化gicv3芯片
     gicv3_init();
@@ -228,28 +163,28 @@ t_kernel_main(void)
 
     // 随机数模块测试
     srand_tick();
-    
-    logger_info("Random number test: %ld\n",rand_tick());
-    logger_info("Random number test: %ld\n",rand_tick());
-    logger_info("Random number test: %ld\n",rand_tick());
-    logger_info("Random number test: %ld\n",rand_tick());
+
+    logger_info("Random number test: %ld\n", rand_tick());
+    logger_info("Random number test: %ld\n", rand_tick());
+    logger_info("Random number test: %ld\n", rand_tick());
+    logger_info("Random number test: %ld\n", rand_tick());
 
     // 申请内存测试
     size_t heap_size = (1 << 28);  // 1 G
     rkmem_init(heap_size);
-    
+
     void *mem1 = rkmem_alloc(256 * 1024);  // 256 KB
     void *mem2 = rkmem_alloc(512 * 1024);  // 512 KB
-    
+
     logger_info("Memory allocation test:\n");
     logger_info("  Allocated 256 KB at %p\n", mem1);
     logger_info("  Allocated 512 KB at %p\n", mem2);
-    
+
     // scmi 时钟
-    // enable_scmi_clock(6);
+    enable_scmi_clock(6);
 
     // cru 时钟
-    // enable_rk3588_npu_clocks();
+    enable_rk3588_npu_clocks();
 
     // RKNPU 初始化测试
     rknpu_init();

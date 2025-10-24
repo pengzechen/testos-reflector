@@ -4,9 +4,6 @@
 #define MAX_WAIT_COUNT 10000
 
 
-//--------------------------------------
-// RK3588 平台 PMU 信息初始化（等价 pmu_info()）
-//--------------------------------------
 const pmu_info_t rk3588_pmu_info = {
     .pwr_offset           = 0x14c,
     .status_offset        = 0x180,

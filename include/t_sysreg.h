@@ -29,6 +29,14 @@ get_current_cpu_id(void)
     return (uint32_t) (READ_MPIDR_EL1() & 0xff);
 }
 
+/* 返回当前 EL（0..3） */
+#define READ_CURRENTEL() ({                        \
+    unsigned long __val;                           \
+    __asm__ __volatile__("mrs %0, CurrentEL"      \
+                         : "=r"(__val));           \
+    (unsigned)((__val >> 2) & 0x3);                \
+})
+
 /* ========================================================================
  * Exception and Interrupt Control Registers
  * ======================================================================== */

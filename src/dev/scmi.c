@@ -83,7 +83,7 @@ protocto_version_check()
 }
 
 
-//  =============================== 4.6.2.9 CLOCK_NAME_GET 
+//  4.6.2.9 CLOCK_NAME_GET 
 void
 clock_name_get(uint32_t id)
 {
@@ -146,11 +146,10 @@ clock_name_get(uint32_t id)
     logger_info("SCMI Clock get name Response: flags=0x%x\n", resp_payload.flags);
     logger_info("name: %s\n", resp_payload.name);
 }
-// ===================================  CLOCK_NAME_GET END =============================
+// CLOCK_NAME_GET END
 
 
-
-// =================  4.6.2.8 CLOCK_CONFIG_SET =============================
+// 4.6.2.8 CLOCK_CONFIG_SET
 /*
     Bits[31:1] 
     Bit[0] 
@@ -212,16 +211,10 @@ clock_config_set(uint32_t id) {
     logger_info("SCMI Response Status: %d\n", status);
 
 }
-
-// ================ CLOCK_CONFIG_SET  END =============================
-
+// CLOCK_CONFIG_SET END
 
 
-
-
-
-// ====================  4.6.2.7 CLOCK_RATE_GET  =================
-
+// 4.6.2.7 CLOCK_RATE_GET
 struct hertz {
     uint32_t low;
     uint32_t high;
@@ -286,12 +279,10 @@ clock_rate_get(uint32_t id) {
     
 }
 
-// ====================  CLOCK_RATE_GET  END =================
+// CLOCK_RATE_GET END
 
 
-
-
-// ============================== 4.6.2.6 CLOCK_RATE_SET  ====================
+// 4.6.2.6 CLOCK_RATE_SET
 /*
 Bits[31:4] 
 Bits[3:2] 
@@ -382,9 +373,7 @@ clock_rate_set(uint32_t id)
     logger_info("SCMI Response Status: %d\n", status);
 
 }
-
-
-// ============================== CLOCK_RATE_SET  END ====================
+// CLOCK_RATE_SET END
 
 void
 enable_scmi_clock(uint32_t clock_id)

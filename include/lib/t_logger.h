@@ -38,6 +38,13 @@ logger_warn(const char *fmt, ...);
 extern int
 logger_error(const char *fmt, ...);
 
+
+void
+dumpmem_as_u64(uint64_t *addr, int nums);
+
+size_t
+u64_to_hex(uint64_t val, char *buf, size_t buf_size);
+
 extern void
 t_run_printf_tests();
 
