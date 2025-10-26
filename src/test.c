@@ -8,6 +8,7 @@
 #include "lib/t_logger.h"
 #include "lib/t_string.h"
 #include "lib/rand.h"
+#include "t_timer.h"
 
 #define MAX_M 544
 #define MAX_K 4096
@@ -25,6 +26,10 @@ int8_t matrixB[(MAX_N * MAX_K)];
 int32_t expected_result[MAX_M * MAX_N];
 
 uint64_t npu_regs[112];
+
+int weight_map[MAX_K * MAX_N];
+
+int feature_map[MAX_M * MAX_K];
 
 // ======================================================
 // 工具函数
@@ -199,24 +204,50 @@ rknpu_test(void)
         matrixB[i] = rand_int();
     }
 
-    int8_t *weights_int8 = weights;
-
-    for (int n = 1; n <= N; n++) {
-        for (int k = 1; k <= K; k++) {
-            weights_int8[weight_int8(K, n, k)] = matrixB[((n - 1) * K) + (k - 1)];
+    // --- 1. 初始化阶段，只做一次 ---
+    // 生成 weight_map / feature_map（仅用于第一次重排）
+    for (int n = 0; n < N; n++) {
+        for (int k = 0; k < K; k++) {
+            weight_map[n * K + k] = weight_int8(K, n + 1, k + 1);
         }
     }
 
-    int8_t *feature_data_int8 = (int8_t *) input;
-
-    for (int m = 1; m <= M; m++) {
-        for (int k = 1; k <= K; k++) {
-            feature_data_int8[feature_data(K, M, 1, 16, k, m, 1)] =
-                matrixA[((m - 1) * K) + (k - 1)];
+    for (int m = 0; m < M; m++) {
+        for (int k = 0; k < K; k++) {
+            feature_map[m * K + k] = feature_data(K, M, 1, 16, k + 1, m + 1, 1);
         }
     }
+
+    // --- 2. 第一次重排，生成按 NPU 内存布局的矩阵缓存 ---
+    int8_t *matrixB_int8_layout = rkmem_alloc(K * N);  // 按 NPU 内存布局
+    int8_t *matrixA_int8_layout = rkmem_alloc(M * K);
+
+    logger("layout before: %d\n", timer_get_system_ticks());
+    for (int i = 0; i < K * N; i++) {
+        matrixB_int8_layout[weight_map[i]] = matrixB[i];
+    }
+
+    for (int i = 0; i < M * K; i++) {
+        matrixA_int8_layout[feature_map[i]] = matrixA[i];
+    }
+    logger("layout after: %d\n", timer_get_system_ticks());
+
+    // --- 3. 可选：CPU 软件模拟，用于验证 ---
+    logger_warn("current tick1 (cpu compute before): %d\n", timer_get_system_ticks());
 
     matmul_int(M, K, N, (int8_t *) &matrixA, (int8_t *) &matrixB, (int32_t *) &expected_result);
+
+    logger_warn("current tick2 (cpu compute after): %d\n", timer_get_system_ticks());
+
+    // --- 4. 更新矩阵数据时直接 memcpy ---
+    int8_t *weights_int8 = weights;
+    memcpy_neon((uint8_t *)weights_int8, (const uint8_t *)matrixB_int8_layout, K * N);
+
+    int8_t *feature_data_int8 = (int8_t *) input;
+    memcpy_neon((uint8_t *)feature_data_int8, (const uint8_t *)matrixA_int8_layout, M * K);
+
+    logger_warn("current tick3: %d\n", timer_get_system_ticks());
+
 
     npu_submit_t submit = {
         .flags           = RKNPU_JOB_PC | RKNPU_JOB_BLOCK | RKNPU_JOB_PINGPONG,
@@ -240,6 +271,9 @@ rknpu_test(void)
     submit.subcore_task[4] = (npu_subcore_task_t){.task_start = 0, .task_number = 0};
 
     rknpu_submit_task(&submit);
+
+    logger_warn("current tick4: %d\n", timer_get_system_ticks());
+
 
     logger_warn("RkNPU submit task completed.\n");
 
