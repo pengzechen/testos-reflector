@@ -67,7 +67,8 @@ prepare_data()
     }
 }
 
-bool verify_reorder()
+bool
+verify_reorder()
 {
     bool ok = true;
 
@@ -76,8 +77,7 @@ bool verify_reorder()
         int8_t actual   = matrixB_int8_layout[i];
 
         if (expected != actual) {
-            logger_error("mismatch at index %zu: expected %d, actual %d\n",
-                         i, expected, actual);
+            logger_error("mismatch at index %zu: expected %d, actual %d\n", i, expected, actual);
             ok = false;
         }
     }
@@ -89,6 +89,42 @@ bool verify_reorder()
     }
 
     return ok;
+}
+
+void
+reorder_matrix_multi_core(int8_t         *dst,
+                          const int8_t   *src,
+                          const uint32_t *map,
+                          size_t          total,
+                          int             num_cores)
+{
+
+    size_t chunk = (total + num_cores - 1) / num_cores;
+
+    // 清空目标
+    // for (size_t i = 0; i < total; i++)
+    //     dst[i] = 0;
+
+    // 启动 secondary 核
+    for (int c = 1; c < num_cores; c++) {
+        reorder_task_t *t = &tasks[c];
+        t->dst            = dst;
+        t->src            = src;
+        t->map            = map;
+        t->start          = c * chunk;
+        t->end            = (c + 1) * chunk;
+        if (t->end > total)
+            t->end = total;
+
+        launch_on_core(c, reorder_worker, t);
+    }
+
+    // 主核自己处理 chunk0
+    reorder_task_t t0 = {dst, src, map, 0, chunk};
+    reorder_worker(0, &t0);
+
+    wake_all_cores(num_cores);
+    wait_all_cores(num_cores);
 }
 
 void

@@ -10,6 +10,8 @@
 #include "lib/rand.h"
 #include "t_timer.h"
 
+#include "reorder.h"
+
 #define MAX_M 544
 #define MAX_K 4096
 #define MAX_N 4096
@@ -223,13 +225,17 @@ rknpu_test(void)
     int8_t *matrixA_int8_layout = rkmem_alloc(M * K);
 
     logger("layout before: %d\n", timer_get_system_ticks());
-    for (int i = 0; i < K * N; i++) {
-        matrixB_int8_layout[weight_map[i]] = matrixB[i];
-    }
-
+    //  =================  优化这里 =====================
+    // for (int i = 0; i < K * N; i++) {
+    //     matrixB_int8_layout[weight_map[i]] = matrixB[i];
+    // }
+    reorder_matrix_multi_core(matrixB_int8_layout, matrixB, (const uint32_t *)weight_map, K*N, 8);
+    logger("layout after use multi core reorder: %d\n", timer_get_system_ticks());
+    
     for (int i = 0; i < M * K; i++) {
         matrixA_int8_layout[feature_map[i]] = matrixA[i];
     }
+    // =================================================
     logger("layout after: %d\n", timer_get_system_ticks());
 
     // --- 3. 可选：CPU 软件模拟，用于验证 ---
@@ -299,3 +305,7 @@ rknpu_test(void)
     // logger_info("actual raw:\n");
     // dump_reg(output, (M * N) / 2);
 }
+
+
+// 12,480 ms
+// 40,060 ms

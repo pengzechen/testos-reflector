@@ -187,12 +187,12 @@ t_kernel_main(uint64_t id)
     enable_rk3588_npu_clocks();
 
     // RKNPU 初始化测试
-    // rknpu_init();
+    rknpu_init();
 
     // 测试
-    // rknpu_test();
+    rknpu_test();
 
-    reorder_test();
+    // reorder_test();
 
     while (1) {
         WFI();
