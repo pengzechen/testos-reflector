@@ -81,32 +81,5 @@
 #define PSCI_VERSION(major, minor) (0 | (major << PSCI_VERSION_MAJOR_SHIFT) | (minor))
 
 
-#include "t_types.h"
-#include "t_sysreg.h"
-
-// 使用统一的系统寄存器访问函数
-// smc_call() 和 hvc_call() 现在在 t_sysreg.h 中定义
-
-// 系统关闭函数
-static inline void
-system_shutdown(void)
-{
-    hvc_call(PSCI_0_2_FN_SYSTEM_OFF, 0, 0, 0);
-    // 如果PSCI调用失败，进入无限循环
-    while (1) {
-        asm volatile("wfi");
-    }
-}
-
-// 系统重启函数
-static inline void
-system_reset(void)
-{
-    hvc_call(PSCI_0_2_FN_SYSTEM_RESET, 0, 0, 0);
-    // 如果PSCI调用失败，进入无限循环
-    while (1) {
-        asm volatile("wfi");
-    }
-}
 
 #endif

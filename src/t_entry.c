@@ -16,6 +16,9 @@
 #include "lib/rand.h"
 #include "npu/rkmem.h"
 
+#include "t_psci.h"
+#include "cfg/t_cfg.h"
+
 extern void
 __bss_start();
 extern void
@@ -23,110 +26,93 @@ __bss_end();
 extern void
 __heap_flag();
 
-// 测试任务1 - 抢占式调度测试
-void
-test_task1_entry(void *arg)
-{
-    (void) arg;
-    uint32_t cpu_id = get_current_cpu_id();
-    for (int i = 0; i < 10; i++) {
-        task_sleep(1000);
-    }
-    logger_info("Test Task 1 on CPU %u finished\n", cpu_id);
-    task_exit();
-}
-
-// 测试任务2 - 睡眠测试
-void
-test_task2_entry(void *arg)
-{
-    (void) arg;
-    uint32_t cpu_id = get_current_cpu_id();
-    logger_info("Test Task 2 started on CPU %u (sleep test)\n", cpu_id);
-    for (int i = 0; i < 10; i++) {
-        task_sleep(1000);
-    }
-    logger_info("Test Task 2 on CPU %u finished\n", cpu_id);
-    task_exit();
-}
-
-// 所有核的入口函数
-void
-t_main_entry()
-{
-    uint32_t cpu_id = get_current_cpu_id();
-    logger_info("Entering main entry function on CPU %u\n", cpu_id);
-
-    // 初始化当前CPU的调度器
-    scheduler_init(cpu_id);
-
-    // 为当前CPU创建idle任务
-    task_t *idle_task = task_create("idle", idle_task_entry, NULL, cpu_id);
-    if (!idle_task) {
-        logger_error("Failed to create idle task for CPU %u\n", cpu_id);
-        while (1)
-            WFI();
-    }
-
-    // 设置idle任务并从就绪队列中移除（idle任务不应该在就绪队列中）
-    g_task_manager.schedulers[cpu_id].idle_task = idle_task;
-    scheduler_remove_task(idle_task);
-
-    // 只在CPU 0上创建任务（单核测试）
-    if (cpu_id == 0) {
-        task_t *test1 = task_create("test1", test_task1_entry, NULL, 0);
-        task_t *test2 = task_create("test2", test_task2_entry, NULL, 0);
-
-        if (!test1) {
-            logger_error("Failed to create test task 1\n");
-        } else {
-            logger_info("Created test task 1 on CPU 0\n");
-        }
-
-        if (!test2) {
-            logger_error("Failed to create test task 2\n");
-        } else {
-            logger_info("Created test task 2 on CPU 0\n");
-        }
-    }
-
-    // 启用定时器
-    timer_enable();
-
-    // 启用中断
-    logger_info("Enabling interrupts on CPU %u\n", cpu_id);
-    enable_interrupts();
-
-    while (1) {
-        WFI();
-        // 检查是否有任务需要调度
-        // scheduler_schedule(cpu_id);
-    }
-}
-
-
-// SMP函数声明
 extern void
-start_secondary_cpus(void);
+start_secondary_cpus();
 
-// 副核CPU核心的入口函数
-void
-t_second_kernel_main(void)
+// ============================= 核心抽象 =========================
+// ===============================================================
+
+#define MAX_CPUS T_SMP_NUM
+
+typedef struct
 {
-    // rk3588 先不考虑多核
-    // gicc_init();
+    void (*entry)(int cpu_id, void *arg);  // 核心执行函数
+    void        *arg;                      // 参数指针
+    volatile int start_flag;               // =1 表示任务可执行
+    volatile int done_flag;                // =1 表示任务完成
+} cpu_task_t;
 
-    // 初始化定时器
-    timer_init();
+static cpu_task_t cpu_tasks[MAX_CPUS];
+volatile int      cpu_task_ready[MAX_CPUS];
+volatile int      cpu_task_done[MAX_CPUS];
 
-    // 调用 main_entry
-    t_main_entry();
+volatile int      cpu_online[MAX_CPUS];
+
+
+// 为某个核心设置任务。
+void
+launch_on_core(int cpu_id, void (*entry)(int, void *), void *arg)
+{
+    cpu_tasks[cpu_id].entry      = entry;
+    cpu_tasks[cpu_id].arg        = arg;
+    cpu_tasks[cpu_id].done_flag  = 0;
+    cpu_tasks[cpu_id].start_flag = 1;  // 唤醒该核
 }
+
+// 主核调用之后，所有副核开始执行task。
+void
+wake_all_cores(int num)
+{
+    (void)num;
+    asm volatile("sev");
+}
+
+// 主核调用 wakeup 之后需要等待其它副核执行完成。
+void
+wait_all_cores(int num)
+{
+    (void)num;
+    for (int i = 1; i < MAX_CPUS; i++) {
+        while (cpu_tasks[i].done_flag == 0)
+            ;  // busy wait
+    }
+}
+
+// 副核在汇编设置一些寄存器就会跳到这里。循环等待任务
+void
+t_secondary_main(uint64_t cpu_id)
+{
+    logger_info("second core id: %d\n", cpu_id);
+    // logger_warn("second core CurrentEL = %u\n", READ_CURRENTEL());
+    cpu_online[cpu_id] = 1;
+    DSB_SY();
+    while (1) {
+        if (cpu_tasks[cpu_id].start_flag) {
+            void (*fn)(int, void *)      = cpu_tasks[cpu_id].entry;
+            void *arg                    = cpu_tasks[cpu_id].arg;
+            cpu_tasks[cpu_id].start_flag = 0;
+
+            if (fn)
+                fn(cpu_id, arg);
+
+            cpu_tasks[cpu_id].done_flag = 1;
+            DSB_SY();
+        }
+        // logger_info("core %d wait for event\n");
+        asm volatile("wfe" ::: "memory");
+    }
+}
+
+
+// ============================== 首核 ============================
+
+void
+reorder_test();
 
 
 // 主内核入口函数
 void
-t_kernel_main(void)
+t_kernel_main(uint64_t id)
 {
     logger_info("Compiled on %s at %s\n", __DATE__, __TIME__);
 
@@ -137,21 +123,27 @@ t_kernel_main(void)
 
     logger_info("heap flag address: %p\n", &__heap_flag);
 
-
-    // 在 main 里打印
     logger_warn("CurrentEL = %u\n", READ_CURRENTEL());
 
-    // 初始化gicv3芯片
+    logger_info("smp: %d\n", T_SMP_NUM);
+
+    logger_info("main core id: %d\n", id);
+
     gicv3_init();
 
-    // 初始化uart
     // dw_uart_init();
 
-    // 初始化定时器
     timer_init();
-
-    // 显示定时器信息
     // timer_dump_info();
+
+    // 启动多核
+    start_secondary_cpus();
+    for (int i = 1; i < T_SMP_NUM; i++) {
+        while (cpu_online[i] == 0)
+            ;  // busy wait
+    }
+    logger_info("main core wait %d core ok!\n", T_SMP_NUM);
+
 
     // 启用定时器
     timer_enable();
@@ -187,10 +179,12 @@ t_kernel_main(void)
     enable_rk3588_npu_clocks();
 
     // RKNPU 初始化测试
-    rknpu_init();
+    // rknpu_init();
 
     // 测试
-    rknpu_test();
+    // rknpu_test();
+
+    reorder_test();
 
     while (1) {
         WFI();
