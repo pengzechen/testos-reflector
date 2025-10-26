@@ -6,10 +6,11 @@
     #define __LOAD_ADDR__ 0x40080000
 #endif
 
-#ifndef T_SMP_NUM
-    // qemu smp num default
-    #define T_SMP_NUM 1
-#endif
+// #ifndef T_SMP_NUM
+//     // qemu smp num default
+//     #define T_SMP_NUM 1
+// #endif
+#define T_SMP_NUM  8
 
 // Stack configuration
 #define T_STACK_SIZE 0x4000  // 16KB stack size

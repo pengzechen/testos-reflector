@@ -46,7 +46,7 @@ static cpu_task_t cpu_tasks[MAX_CPUS];
 volatile int      cpu_task_ready[MAX_CPUS];
 volatile int      cpu_task_done[MAX_CPUS];
 
-volatile int      cpu_online[MAX_CPUS];
+volatile int cpu_online[MAX_CPUS];
 
 
 // 为某个核心设置任务。
@@ -63,7 +63,7 @@ launch_on_core(int cpu_id, void (*entry)(int, void *), void *arg)
 void
 wake_all_cores(int num)
 {
-    (void)num;
+    (void) num;
     asm volatile("sev");
 }
 
@@ -71,10 +71,18 @@ wake_all_cores(int num)
 void
 wait_all_cores(int num)
 {
-    (void)num;
+    (void) num;
+    // 记录每个核是否已经报告过完成
+    static int reported[MAX_CPUS] = {0};
+
     for (int i = 1; i < MAX_CPUS; i++) {
         while (cpu_tasks[i].done_flag == 0)
             ;  // busy wait
+
+        if (!reported[i]) {
+            reported[i] = 1;
+            logger_info("core %d finished its task\n", i);
+        }
     }
 }
 
@@ -142,7 +150,7 @@ t_kernel_main(uint64_t id)
         while (cpu_online[i] == 0)
             ;  // busy wait
     }
-    logger_info("main core wait %d core ok!\n", T_SMP_NUM);
+    logger_warn("main core wait %d cores ok!\n", T_SMP_NUM - 1);
 
 
     // 启用定时器
