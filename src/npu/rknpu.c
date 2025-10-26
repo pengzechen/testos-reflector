@@ -91,7 +91,7 @@ rknpu_init(void)
     // 安装中断处理
     irq_install(NPU0_IRQ, job_done);
 
-    gicv3_enable_int(NPU0_IRQ, true);
+    // gicv3_enable_int(NPU0_IRQ, true);
 
     if (gicv3_is_int_enabled(NPU0_IRQ)) {
         logger_warn("NPU0 IRQ %d is enabled in GICv3\n", NPU0_IRQ);
@@ -238,18 +238,35 @@ check_job_done()
     return false;
 }
 
+bool
+check_job_done_noirq()
+{
+    uint32_t status;
+    status        = read32((void *) (NPU0_BASE + RKNPU_INT_STATUS));
+    uint32_t fuzz = rknpu_fuzz_status(status);
+    if (fuzz == 0x300) {
+        logger_info("status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_STATUS)));
+        logger_info("row status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS)));
+        return true;
+    }
+    return false;
+}
+
 void
 job_wait_complete(uint32_t core, uint32_t task_number, uint32_t tmo)
 {
     (void) core;
+    int l = 0;
     do {
         // 简单轮询中断状态寄存器
-        if (check_job_done()) {
+        if (check_job_done_noirq()) {
+            logger_info("wait loop: %d\n", l);
             logger_info("RKNPU: Job completed successfully.\n");
             return;
         } else {
             timer_delay_ms(1);
             tmo--;
+            l++;
         }
     } while (tmo > 0);
     logger_error("RKNPU: Job wait timeout.\n");

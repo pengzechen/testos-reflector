@@ -114,8 +114,8 @@ void
 rknpu_test(void)
 {
     unsigned int M = 1;
-    unsigned int K = 32;
-    unsigned int N = 32;
+    unsigned int K = 4096;
+    unsigned int N = 4096;
 
     if ((M <= 0) || (M > MAX_M) | (((M % 4) != 0) && (M != 1))) {
         logger_error("M [%d] is out of range or not a mutliple of 4 \n", M);
