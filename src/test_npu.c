@@ -8,6 +8,7 @@
 #include "lib/t_logger.h"
 #include "lib/t_string.h"
 #include "lib/rand.h"
+#include "lib/sort.h"
 #include "t_timer.h"
 
 #include "reorder.h"
@@ -113,6 +114,12 @@ rand_int()
     return val;
 }
 
+
+int
+reorder_entry_cmp(const void *a, const void *b)
+{
+    return ((reorder_entry_t *) a)->dst_index - ((reorder_entry_t *) b)->dst_index;
+}
 
 // ======================================================
 // 主测试函数
@@ -224,14 +231,36 @@ rknpu_test(void)
     int8_t *matrixB_int8_layout = rkmem_alloc(K * N);  // 按 NPU 内存布局
     int8_t *matrixA_int8_layout = rkmem_alloc(M * K);
 
+    /*
+    // 这个收益很小了
+    reorder_entry_t *weight_entries = rkmem_alloc(sizeof(reorder_entry_t) * K * N);
+    for (uint32_t i = 0; i < K * N; i++) {
+        weight_entries[i].dst_index = weight_map[i];
+        weight_entries[i].src_index = i;
+    }
+    按目标位置排序（保证写连续）
+    qsort(weight_entries, K * N, sizeof(reorder_entry_t), reorder_entry_cmp);
+    第三版
+    reorder_matrix_multi_core_entries(matrixB_int8_layout, matrixB, weight_entries, K * N, 8);
+    */
+
     logger("layout before: %d\n", timer_get_system_ticks());
     //  =================  优化这里 =====================
+
+    // 第一版
     // for (int i = 0; i < K * N; i++) {
     //     matrixB_int8_layout[weight_map[i]] = matrixB[i];
     // }
-    reorder_matrix_multi_core(matrixB_int8_layout, matrixB, (const uint32_t *)weight_map, K*N, 8);
+
+    // 第二版
+    reorder_matrix_multi_core(matrixB_int8_layout,
+                              matrixB,
+                              (const uint32_t *) weight_map,
+                              K * N,
+                              8);
+
     logger("layout after use multi core reorder: %d\n", timer_get_system_ticks());
-    
+
     for (int i = 0; i < M * K; i++) {
         matrixA_int8_layout[feature_map[i]] = matrixA[i];
     }
@@ -247,10 +276,10 @@ rknpu_test(void)
 
     // --- 4. 更新矩阵数据时直接 memcpy ---
     int8_t *weights_int8 = weights;
-    memcpy_neon((uint8_t *)weights_int8, (const uint8_t *)matrixB_int8_layout, K * N);
+    memcpy_neon((uint8_t *) weights_int8, (const uint8_t *) matrixB_int8_layout, K * N);
 
     int8_t *feature_data_int8 = (int8_t *) input;
-    memcpy_neon((uint8_t *)feature_data_int8, (const uint8_t *)matrixA_int8_layout, M * K);
+    memcpy_neon((uint8_t *) feature_data_int8, (const uint8_t *) matrixA_int8_layout, M * K);
 
     logger_warn("current tick3: %d\n", timer_get_system_ticks());
 
@@ -309,3 +338,6 @@ rknpu_test(void)
 
 // 12,480 ms
 // 40,060 ms
+
+// 412 + 42 = 4,540 ms
+//            9,980 ms

@@ -4,6 +4,7 @@
 #include "cfg/t_cfg.h"
 #include "lib/t_logger.h"
 #include "t_timer.h"
+#include "reorder.h"
 
 // 3个外部接口
 
@@ -37,6 +38,60 @@ reorder_worker(int cpu_id, void *arg)
 
     for (size_t i = task->start; i < task->end; i++) {
         task->dst[task->map[i]] = task->src[i];
+    }
+}
+
+void
+reorder_worker_block(int cpu_id, void *arg)
+{
+    reorder_task_t *task       = (reorder_task_t *) arg;
+    const size_t    block_size = 64;  // 一次处理 64 字节，Cache line 对齐
+
+    for (size_t i = task->start; i < task->end; i += block_size) {
+        size_t end = i + block_size;
+        if (end > task->end)
+            end = task->end;
+
+        for (size_t j = i; j < end; j++) {
+            task->dst[task->map[j]] = task->src[j];
+        }
+    }
+}
+
+void
+reorder_worker_optimized(int cpu_id, void *arg)
+{
+    reorder_task_t *task = (reorder_task_t *) arg;
+    const int8_t   *src  = task->src;
+    int8_t         *dst  = task->dst;
+    const uint32_t *map  = task->map;
+
+    // --- 参数可调 ---
+    const size_t PREFETCH_DIST = 64;   // 提前预取 64 个元素
+    const size_t BLOCK         = 256;  // 每次处理 256 元素（1KB），cache line 对齐
+    // ----------------
+
+    size_t start = task->start;
+    size_t end   = task->end;
+
+    for (size_t i = start; i < end; i += BLOCK) {
+        size_t limit = i + BLOCK;
+        if (limit > end)
+            limit = end;
+
+        // 主循环：边预取边写
+        for (size_t j = i; j < limit; j++) {
+            // 提前预取下一个读位置
+            if (j + PREFETCH_DIST < end)
+                __builtin_prefetch(&src[j + PREFETCH_DIST], 0, 1);
+
+            // 提前预取下一个写位置（写预取 hint = 1）
+            if (j + PREFETCH_DIST < end)
+                __builtin_prefetch(&dst[map[j + PREFETCH_DIST]], 1, 1);
+
+            // 实际赋值
+            dst[map[j]] = src[j];
+        }
     }
 }
 
@@ -98,7 +153,6 @@ reorder_matrix_multi_core(int8_t         *dst,
                           size_t          total,
                           int             num_cores)
 {
-
     size_t chunk = (total + num_cores - 1) / num_cores;
 
     // 清空目标
@@ -194,3 +248,83 @@ reorder_test()
 // smp = 8
 // single 38,840 ms
 // multi  10,550 ms
+
+
+
+typedef struct {
+    int8_t const         *src;
+    int8_t               *dst;
+    const reorder_entry_t *entries;
+    size_t                start;
+    size_t                end;
+} reorder_entry_task_t;
+
+static reorder_entry_task_t entry_tasks[REORDER_USE_CPUS];
+
+// worker：按排序后 entries 写（dst 连续，src 可能随机）
+void reorder_worker_entries(int cpu_id, void *arg)
+{
+    reorder_entry_task_t *task = (reorder_entry_task_t *)arg;
+    const reorder_entry_t *entries = task->entries;
+    const int8_t *src = task->src;
+    int8_t *dst = task->dst;
+
+    const size_t PREFETCH_DIST = 64;
+    const size_t BLOCK = 256;
+
+    size_t start = task->start;
+    size_t end = task->end;
+
+    for (size_t i = start; i < end; i += BLOCK) {
+        size_t limit = i + BLOCK;
+        if (limit > end) limit = end;
+
+        for (size_t j = i; j < limit; j++) {
+            // 预取将要访问的源（随机读）
+            if (j + PREFETCH_DIST < end) {
+                __builtin_prefetch(&src[entries[j + PREFETCH_DIST].src_index], 0, 1);
+            }
+            // 预取将要写入的目标（目标是连续的，prefetch optional）
+            // __builtin_prefetch(&dst[entries[j + PREFETCH_DIST].dst_index], 1, 1);
+
+            // 使用 entries 中的索引：注意 src 用 src_index，dst 用 dst_index
+            dst[entries[j].dst_index] = src[entries[j].src_index];
+        }
+    }
+}
+
+// 调度函数：接收 entries（已按 dst_index 排序），按 entries 数量 chunk
+void reorder_matrix_multi_core_entries(int8_t *dst,
+                                       const int8_t *src,
+                                       const reorder_entry_t *entries,
+                                       size_t total_entries,
+                                       int num_cores)
+{
+    if (num_cores > REORDER_USE_CPUS) num_cores = REORDER_USE_CPUS;
+    size_t chunk = (total_entries + num_cores - 1) / num_cores;
+
+    // 启动 secondary 核
+    for (int c = 1; c < num_cores; c++) {
+        reorder_entry_task_t *t = &entry_tasks[c];
+        t->dst = dst;
+        t->src = src;
+        t->entries = entries;
+        t->start = c * chunk;
+        t->end = (c + 1) * chunk;
+        if (t->end > total_entries) t->end = total_entries;
+
+        launch_on_core(c, reorder_worker_entries, t);
+    }
+
+    // 主核处理 chunk0
+    reorder_entry_task_t t0;
+    t0.dst = dst;
+    t0.src = src;
+    t0.entries = entries;
+    t0.start = 0;
+    t0.end = (chunk > total_entries ? total_entries : chunk);
+    reorder_worker_entries(0, &t0);
+
+    wake_all_cores(num_cores);
+    wait_all_cores(num_cores);
+}
