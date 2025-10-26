@@ -108,14 +108,67 @@ memset(void *s, int c, size_t n)
 void *
 memcpy(void *dest, const void *src, size_t n)
 {
-    size_t      i;
-    char       *a = dest;
-    const char *b = src;
+    size_t         i = 0;
+    uint8_t       *d = (uint8_t *) dest;
+    const uint8_t *s = (const uint8_t *) src;
 
-    for (i = 0; i < n; ++i)
-        a[i] = b[i];
+    // --- 1. 逐字节拷贝直到对齐 2/4/8 ---
+    while (i < n && ((uint64_t) (d + i) % 2 != 0 || (uint64_t) (s + i) % 2 != 0)) {
+        d[i] = s[i];
+        i++;
+    }
+
+    // --- 2. 8 字节拷贝 ---
+    while (i + 7 < n && ((uint64_t) (d + i) % 8 == 0) && ((uint64_t) (s + i) % 8 == 0)) {
+        *((uint64_t *) (d + i)) = *((uint64_t *) (s + i));
+        i += 8;
+    }
+
+    // --- 3. 4 字节拷贝 ---
+    while (i + 3 < n && ((uint64_t) (d + i) % 4 == 0) && ((uint64_t) (s + i) % 4 == 0)) {
+        *((uint32_t *) (d + i)) = *((uint32_t *) (s + i));
+        i += 4;
+    }
+
+    // --- 4. 2 字节拷贝 ---
+    while (i + 1 < n && ((uint64_t) (d + i) % 2 == 0) && ((uint64_t) (s + i) % 2 == 0)) {
+        *((uint16_t *) (d + i)) = *((uint16_t *) (s + i));
+        i += 2;
+    }
+
+    // --- 5. 剩余逐字节拷贝 ---
+    while (i < n) {
+        d[i] = s[i];
+        i++;
+    }
 
     return dest;
+}
+
+void
+memcpy_neon(uint8_t *dest, const uint8_t *src, size_t n)
+{
+    size_t i = 0;
+
+    // --- 1. 对齐拷贝至 16 字节边界 ---
+    while (i < n && ((uint64_t) (dest + i) % 16 != 0 || (uint64_t) (src + i) % 16 != 0)) {
+        dest[i] = src[i];
+        i++;
+    }
+
+    // --- 2. NEON 128-bit 拷贝 ---
+    for (; i + 15 < n; i += 16) {
+        __asm__ volatile("ld1 {v0.16b}, [%[src]]\n"   // 加载 16 字节到 NEON v0
+                         "st1 {v0.16b}, [%[dest]]\n"  // 存储 16 字节到 dest
+                         :
+                         : [src] "r"(src + i), [dest] "r"(dest + i)
+                         : "v0", "memory");
+    }
+
+    // --- 3. 剩余不足 16 字节拷贝 ---
+    for (; i < n; i++) {
+        dest[i] = src[i];
+    }
 }
 
 int

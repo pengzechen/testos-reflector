@@ -51,6 +51,11 @@ el1_start:
 
     msr daifset, #2   // 关闭所有中断
 
+    mrs     x0, cpacr_el1
+    orr     x0, x0, #(3 << 20)    // set FPEN[21:20] = 0b11
+    msr     cpacr_el1, x0
+    isb
+
     // 关闭
     mrs x0, sctlr_el1
     bic x0, x0, #(1 << 2)   // C bit (D-cache disable)
