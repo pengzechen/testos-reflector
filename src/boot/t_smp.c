@@ -15,7 +15,7 @@ t_second_entry();
 void
 start_secondary_cpus()
 {
-    logger("core 0 thread info addr: %llx\n",
+    logger_info("core 0 thread info addr: %llx\n",
            (struct thread_into *) (void *) (_t_stack_top - T_STACK_SIZE));
 
     for (int i = 1; i < T_SMP_NUM; i++) {
@@ -24,10 +24,10 @@ start_secondary_cpus()
                               (uint64_t) (void *) t_second_entry,
                               i);
         if (result != 0) {
-            logger("smc_call failed!\n");
+            logger_error("smc_call failed!\n");
         }
 
-        logger("core %d thread info addr: %llx\n",
+        logger_info("core %d thread info addr: %llx\n",
                i,
                (void *) (_t_stack_top_second - T_STACK_SIZE * i));
     }

@@ -26,7 +26,7 @@
 static inline uint32_t
 get_current_cpu_id(void)
 {
-    return (uint32_t) (READ_MPIDR_EL1() & 0xff);
+    return (uint32_t) ((READ_MPIDR_EL1() >> 8) & 0xFF);
 }
 
 /* 返回当前 EL（0..3） */
