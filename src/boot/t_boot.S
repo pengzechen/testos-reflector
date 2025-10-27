@@ -1,9 +1,17 @@
+
+#include "mmu.h"
+#include "tcr.h"
+
 .section .text
 .global _start
 
 .global _t_stack_top
 .global _t_stack_top_second
 .global t_second_entry
+.global init_mmu
+
+.extern enable_mmu
+.extern init_page_table
 
 // 从el3跳转到el1
 _start:
@@ -56,19 +64,15 @@ el1_start:
     msr     cpacr_el1, x0
     isb
 
-    // 关闭
-    mrs x0, sctlr_el1
-    bic x0, x0, #(1 << 2)   // C bit (D-cache disable)
-    bic x0, x0, #(1 << 12)  // I bit (I-cache disable)
-    msr sctlr_el1, x0
-    isb
-
     adrp    x0, exception_vector_base
     add     x0, x0, :lo12:exception_vector_base
     // ldr x0, =exception_vector_base
     msr     vbar_el1, x0
     dsb     sy      
     isb        
+
+    bl init_page_table
+    bl enable_mmu
 
     // 清空bss
     bl t_clear_bsss
@@ -149,6 +153,8 @@ el1_second_start:
     msr     cpacr_el1, x0
     isb
 
+    bl enable_mmu
+
     adrp x1, t_secondary_main
     add  x1, x1, :lo12:t_secondary_main
     mov  x0, x19  //todo: core id
@@ -156,6 +162,47 @@ el1_second_start:
 
     b .
 
+
+init_mmu:
+    // x0 = TTBR0 base (from C caller)
+
+    // 1. Disable MMU first
+    mrs x1, sctlr_el1
+    bic x1, x1, #(1 << 0)    // clear M
+    bic x1, x1, #(1 << 2)    // clear C
+    bic x1, x1, #(1 << 12)   // clear I
+    msr sctlr_el1, x1
+    isb
+
+    // 2. Write MAIR_EL1 (memory attribute table)
+    ldr x1, =(MAIR_VALUE)     // or movz/movk sequence
+    msr mair_el1, x1
+    isb
+
+    // 3. Configure TCR_EL1
+    // Recommend: T0SZ = 16 (48-bit VA) or T0SZ = 32 (4GB) for simpler mapping.
+    // Use inner-shareable for SH0, set IRGN0/ORGN0 explicitly if needed.
+    ldr x1, =(TCR_EL1)        // ensure this constant is correct (see below)
+    msr tcr_el1, x1
+    isb
+
+    // 4. Set TTBR0_EL1 (page table base)
+    msr ttbr0_el1, x0
+
+    // 5. Invalidate TLBs for EL1
+    tlbi vmalle1
+    dsb sy
+    isb
+
+    // 6. Enable caches and MMU
+    mrs x1, sctlr_el1
+    orr x1, x1, #(1 << 0)     // M = 1 enable MMU
+    orr x1, x1, #(1 << 2)     // C = 1 enable data cache
+    orr x1, x1, #(1 << 12)    // I = 1 enable instr cache
+    msr sctlr_el1, x1
+    isb
+
+    ret
 
 
 // 栈空间
