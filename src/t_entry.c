@@ -73,7 +73,7 @@ wait_all_cores(int num)
 {
     (void) num;
     // 记录每个核是否已经报告过完成
-    static int reported[MAX_CPUS] = {0};
+    int reported[MAX_CPUS] = {0};
 
     for (int i = 1; i < MAX_CPUS; i++) {
         while (cpu_tasks[i].done_flag == 0)

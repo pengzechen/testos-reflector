@@ -197,7 +197,7 @@ job_commit_pc(void    *task_ptr,
     write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x1004)));
     write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x3004)));
 
-    logger_info("reg addr: %x\n", first_task->regcmd_addr);
+    logger_info("reg addr: 0x%x\n", first_task->regcmd_addr);
     // dump_reg(first_task->regcmd_addr, NPU_REG_NUM);
     // 写regcmd地址和数据量
     write32(first_task->regcmd_addr, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
@@ -215,7 +215,7 @@ job_commit_pc(void    *task_ptr,
 
     // 写task控制
     uint32_t pc_task_control = ((0x6 | task_pp_en) << pc_task_number_bits) | task_number;
-    logger_info("pc task control: %x\n", pc_task_control);
+    logger_info("pc task control: 0x%x\n", pc_task_control);
     write32(pc_task_control, (void *) (NPU0_BASE + RKNPU_PC_TASK_CONTROL));
 
     // 写task_base_addr
