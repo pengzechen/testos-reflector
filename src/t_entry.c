@@ -18,6 +18,7 @@
 
 #include "t_psci.h"
 #include "cfg/t_cfg.h"
+#include "cache.h"
 
 extern void
 __bss_start();
@@ -137,6 +138,8 @@ t_kernel_main(uint64_t id)
 
     logger_info("main core id: %d\n", id);
 
+    init_cpu_cacheline_size();
+
     gicv3_init();
 
     // dw_uart_init();
@@ -181,10 +184,11 @@ t_kernel_main(uint64_t id)
     logger_info("  Allocated 512 KB at %p\n", mem2);
 
     // scmi 时钟
-    enable_scmi_clock(6);
+    // todo fix.
+    // enable_scmi_clock(6);
 
     // cru 时钟
-    enable_rk3588_npu_clocks();
+    // enable_rk3588_npu_clocks();
 
     // RKNPU 初始化测试
     rknpu_init();
