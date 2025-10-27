@@ -3,13 +3,13 @@
 #include "rkconfig.h"
 #include "rknpu.h"
 #include "lib/t_logger.h"
-#include "t_dw_uart.h"
+#include "dev/t_dw_uart.h"
 #include "lib/t_string.h"
-#include "t_mmio.h"
+#include "mem/t_mmio.h"
 #include "t_exception.h"
-#include "t_gicv3.h"
+#include "dev/t_gicv3.h"
 #include "rkpm.h"
-#include "t_timer.h"
+#include "dev/t_timer.h"
 
 // 只初始化一个RKNPU设备
 

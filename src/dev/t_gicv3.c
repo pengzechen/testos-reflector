@@ -1,6 +1,6 @@
-#include "t_gicv3.h"
+#include "dev/t_gicv3.h"
 #include "t_types.h"
-#include "t_mmio.h"
+#include "mem/t_mmio.h"
 #include "lib/t_logger.h"
 
 struct gicv3_t _gicv3;

@@ -9,10 +9,10 @@
 #include "lib/t_string.h"
 #include "lib/rand.h"
 #include "lib/sort.h"
-#include "t_timer.h"
+#include "dev/t_timer.h"
 
 #include "reorder.h"
-#include "cache.h"
+#include "mem/cache.h"
 
 #define MAX_M 544
 #define MAX_K 4096

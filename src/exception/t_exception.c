@@ -1,9 +1,9 @@
 
 #include "t_types.h"
 #include "t_exception.h"
-#include "t_gicv3.h"
+#include "dev/t_gicv3.h"
 #include "cfg/t_cfg.h"
-#include "t_timer.h"
+#include "dev/t_timer.h"
 #include "lib/t_logger.h"
 
 irq_handler_t g_handler_vec[512] = {0};

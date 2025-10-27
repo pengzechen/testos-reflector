@@ -1,6 +1,6 @@
 
 
-#include "scmi.h"
+#include "dev/scmi.h"
 #include "lib/t_logger.h"
 #include "t_types.h"
 #include "lib/t_string.h"

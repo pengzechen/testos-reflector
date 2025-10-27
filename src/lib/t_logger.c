@@ -8,10 +8,10 @@
 #include <stdarg.h>
 #include "t_types.h"
 #include "lib/t_string.h"
-#include "t_mmio.h"
+#include "mem/t_mmio.h"
 #include "lib/t_spinlock.h"
 #include "cfg/t_cfg.h"
-#include "t_dw_uart.h"
+#include "dev/t_dw_uart.h"
 #include "lib/t_logger.h"
 
 #define BUFSZ 512

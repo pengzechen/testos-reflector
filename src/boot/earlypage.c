@@ -1,6 +1,6 @@
 
 #include "t_types.h"
-#include "mmu.h"
+#include "mem/mmu.h"
 #include "lib/t_string.h"
 #include "lib/t_logger.h"
 

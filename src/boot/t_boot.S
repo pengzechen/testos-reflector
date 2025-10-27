@@ -1,6 +1,6 @@
 
-#include "mmu.h"
-#include "tcr.h"
+#include "mem/mmu.h"
+#include "mem/tcr.h"
 
 .section .text
 .global _start

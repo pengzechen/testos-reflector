@@ -3,7 +3,7 @@
 #include "lib/t_string.h"
 #include "t_sysreg.h"
 #include "lib/t_spinlock.h"
-#include "t_timer.h"
+#include "dev/t_timer.h"
 
 // 全局任务管理器
 task_manager_t g_task_manager;

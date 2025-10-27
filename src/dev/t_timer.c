@@ -1,6 +1,6 @@
-#include "t_timer.h"
-#include "t_mmio.h"
-#include "t_gicv3.h"
+#include "dev/t_timer.h"
+#include "mem/t_mmio.h"
+#include "dev/t_gicv3.h"
 #include "lib/t_logger.h"
 
 #include "t_exception.h"

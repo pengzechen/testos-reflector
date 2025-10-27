@@ -1,10 +1,10 @@
-#include "t_dw_uart.h"
+#include "dev/t_dw_uart.h"
 #include "t_types.h"
-#include "t_mmio.h"
+#include "mem/t_mmio.h"
 #include "lib/t_spinlock.h"
 #include "lib/t_logger.h"
 #include "t_exception.h"
-#include "t_gicv3.h"
+#include "dev/t_gicv3.h"
 
 #define DW_UART_TX_BUFFER_SIZE 1024
 #define DW_UART_RX_BUFFER_SIZE 1024

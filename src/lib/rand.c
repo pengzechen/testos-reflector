@@ -1,5 +1,5 @@
 #include "lib/rand.h"
-#include "t_timer.h"
+#include "dev/t_timer.h"
 #include "t_sysreg.h"
 
 static uint32_t rand_seed = 0;

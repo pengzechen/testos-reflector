@@ -103,8 +103,8 @@ SOFTRST_CON	0x0A00	软复位控制
 	value = 0 → 打开 gate（0 = enable）
 */
 
-#include "cru.h"
-#include "t_mmio.h"
+#include "dev/cru.h"
+#include "mem/t_mmio.h"
 #include "lib/t_logger.h"
 
 

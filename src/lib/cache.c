@@ -1,6 +1,6 @@
 #include "t_types.h"
 #include "t_sysreg.h"
-#include "cache.h"
+#include "mem/cache.h"
 #include "lib/t_logger.h"
 
 size_t      g_cache_line_size;

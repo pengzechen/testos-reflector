@@ -1,12 +1,12 @@
 
 #include "t_types.h"
 
-#include "t_gicv3.h"
-#include "t_dw_uart.h"
-#include "t_timer.h"
+#include "dev/t_gicv3.h"
+#include "dev/t_dw_uart.h"
+#include "dev/t_timer.h"
 #include "npu/rknpu.h"
-#include "cru.h"
-#include "scmi.h"
+#include "dev/cru.h"
+#include "dev/scmi.h"
 
 #include "t_task.h"
 #include "t_sysreg.h"
@@ -18,7 +18,7 @@
 
 #include "t_psci.h"
 #include "cfg/t_cfg.h"
-#include "cache.h"
+#include "mem/cache.h"
 
 extern void
 __bss_start();

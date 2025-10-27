@@ -230,7 +230,7 @@ static const struct rockchip_domain_info rk3588_pm_domains[] = {
 #define __PMU_PWR_CON0_T_H__
 
 #include "t_types.h"
-#include "t_mmio.h"
+#include "mem/t_mmio.h"
 
 #define NPU_ERR_TIMEOUT -110
 
