@@ -12,6 +12,7 @@
 #include "t_timer.h"
 
 #include "reorder.h"
+#include "cache.h"
 
 #define MAX_M 544
 #define MAX_K 4096
@@ -127,8 +128,8 @@ reorder_entry_cmp(const void *a, const void *b)
 void
 rknpu_test(void)
 {
-    unsigned int M = 1;
-    unsigned int K = 4096;
+    unsigned int M = 544;
+    unsigned int K = 544;
     unsigned int N = 4096;
 
     if ((M <= 0) || (M > MAX_M) | (((M % 4) != 0) && (M != 1))) {
@@ -227,6 +228,8 @@ rknpu_test(void)
         }
     }
 
+    
+    
     // --- 2. 第一次重排，生成按 NPU 内存布局的矩阵缓存 ---
     int8_t *matrixB_int8_layout = rkmem_alloc(K * N);  // 按 NPU 内存布局
     int8_t *matrixA_int8_layout = rkmem_alloc(M * K);
@@ -244,22 +247,29 @@ rknpu_test(void)
     reorder_matrix_multi_core_entries(matrixB_int8_layout, matrixB, weight_entries, K * N, 8);
     */
 
+    // --- 3. 可选：CPU 软件模拟，用于验证 ---
+    logger_warn("current tick (cpu compute before): %d\n", timer_get_system_ticks());
+
+    matmul_int(M, K, N, (int8_t *) &matrixA, (int8_t *) &matrixB, (int32_t *) &expected_result);
+
+    logger_warn("current tick (cpu compute after): %d\n", timer_get_system_ticks());
+
+
+
+
     logger("layout before: %d\n", timer_get_system_ticks());
     //  =================  优化这里 =====================
-
     // 第一版
-    // for (int i = 0; i < K * N; i++) {
-    //     matrixB_int8_layout[weight_map[i]] = matrixB[i];
-    // }
-
+    for (int i = 0; i < K * N; i++) {
+        matrixB_int8_layout[weight_map[i]] = matrixB[i];
+    }
     // 第二版
-    reorder_matrix_multi_core(matrixB_int8_layout,
-                              matrixB,
-                              (const uint32_t *) weight_map,
-                              K * N,
-                              8);
-
-    logger("layout after use multi core reorder: %d\n", timer_get_system_ticks());
+    // reorder_matrix_multi_core(matrixB_int8_layout,
+    //                           matrixB,
+    //                           (const uint32_t *) weight_map,
+    //                           K * N,
+    //                           2);
+    // logger("layout after use multi core reorder: %d\n", timer_get_system_ticks());
 
     for (int i = 0; i < M * K; i++) {
         matrixA_int8_layout[feature_map[i]] = matrixA[i];
@@ -267,13 +277,7 @@ rknpu_test(void)
     // =================================================
     logger("layout after: %d\n", timer_get_system_ticks());
 
-    // --- 3. 可选：CPU 软件模拟，用于验证 ---
-    logger_warn("current tick1 (cpu compute before): %d\n", timer_get_system_ticks());
-
-    matmul_int(M, K, N, (int8_t *) &matrixA, (int8_t *) &matrixB, (int32_t *) &expected_result);
-
-    logger_warn("current tick2 (cpu compute after): %d\n", timer_get_system_ticks());
-
+    
     // --- 4. 更新矩阵数据时直接 memcpy ---
     int8_t *weights_int8 = weights;
     memcpy_neon((uint8_t *) weights_int8, (const uint8_t *) matrixB_int8_layout, K * N);
@@ -305,7 +309,11 @@ rknpu_test(void)
     submit.subcore_task[3] = (npu_subcore_task_t){.task_start = 0, .task_number = 0};
     submit.subcore_task[4] = (npu_subcore_task_t){.task_start = 0, .task_number = 0};
 
+    clean_dcache_va_range(regcmd, 1024 * 1024 * 16);
+
     rknpu_submit_task(&submit);
+
+    invalidate_dcache_va_range(regcmd, 1024 * 1024 * 16);
 
     logger_warn("current tick4: %d\n", timer_get_system_ticks());
 
@@ -325,7 +333,7 @@ rknpu_test(void)
         }
     }
     if (ret == 0) {
-        logger_info("Multiplication of [%d,%d] x [%d,%d] succesful \n", M, K, N, K);
+        logger_info("Multiplication of [%d,%d] x [%d,%d] succesful \n", M, K, K, N);
     }
 
     // 查看内存中的数值
@@ -341,3 +349,6 @@ rknpu_test(void)
 
 // 412 + 42 = 4,540 ms
 //            9,980 ms
+
+// 64,080 ms
+// 00,100 ms

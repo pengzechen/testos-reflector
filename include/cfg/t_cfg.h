@@ -10,7 +10,7 @@
 //     // qemu smp num default
 //     #define T_SMP_NUM 1
 // #endif
-#define T_SMP_NUM  8
+#define T_SMP_NUM  2
 
 // Stack configuration
 #define T_STACK_SIZE 0x4000  // 16KB stack size
