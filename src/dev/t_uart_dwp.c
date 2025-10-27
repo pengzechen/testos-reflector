@@ -94,10 +94,10 @@ void
 dw_uart_interrupt_handler(uint64_t *stack_pointer)
 {
     // logger_info("Uart handler invoke...\n");
-    
+
     uint32_t iir = read32((void *) DW_UART_IIR) & 0xF;
     if (iir == 0x4) {  // RX 有人按下了键盘的键， 可以读数据了
-        
+
         spin_lock_irqsave(&rx_buffer.lock);
         while (dw_uart_rx_ready()) {
             char c = (char) read32((void *) DW_UART_RBR);
@@ -105,11 +105,10 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
             buffer_put(&rx_buffer, c);
         }
         spin_unlock_irqrestore(&rx_buffer.lock);
-    
     }
     if (iir == 0x2) {  // TX  **TX 中断是“可以发下一个字节了”**的信号
         spin_lock_irqsave(&tx_buffer.lock);
-    
+
         while (dw_uart_tx_ready() && !buffer_is_empty(&tx_buffer)) {
             char c;
             if (buffer_get(&tx_buffer, &c)) {
@@ -130,7 +129,8 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
     }
 }
 
-static inline void delay_loop(unsigned int n)
+static inline void
+delay_loop(unsigned int n)
 {
     for (volatile unsigned int i = 0; i < n; i++) {
         asm volatile("nop");
@@ -169,7 +169,8 @@ dw_uart_init(void)
     write32(0x3, (void *) DW_UART_LCR);
 
     // 使能 FIFO
-    write32(DW_UART_FCR_ENABLE_FIFO | DW_UART_FCR_CLEAR_RCVR | DW_UART_FCR_CLEAR_XMIT, (void *) DW_UART_FCR);
+    write32(DW_UART_FCR_ENABLE_FIFO | DW_UART_FCR_CLEAR_RCVR | DW_UART_FCR_CLEAR_XMIT,
+            (void *) DW_UART_FCR);
 
     // 安装中断处理
     irq_install(DW_UART_IRQ, dw_uart_interrupt_handler);
@@ -180,11 +181,11 @@ dw_uart_init(void)
     dw_uart_enable_tx_interrupt();
 
 
-    gicv3_set_int_trigger(DW_UART_IRQ, 0); // 设置为电平触发
+    gicv3_set_int_trigger(DW_UART_IRQ, 0);  // 设置为电平触发
 
-    gicv3_set_int_target(DW_UART_IRQ, 0x1); // 目标 CPU 0
+    gicv3_set_int_target(DW_UART_IRQ, 0x1);  // 目标 CPU 0
 
-    gicv3_enable_int(DW_UART_IRQ, true); 
+    gicv3_enable_int(DW_UART_IRQ, true);
 
     if (gicv3_is_int_enabled(DW_UART_IRQ)) {
         logger_warn("DW UART IRQ %d is enabled in GICv3\n", DW_UART_IRQ);
@@ -237,17 +238,24 @@ dw_uart_putchar(char c)
 {
     // 如果 UART 尚未初始化，直接写寄存器
     if (!dw_uart_initialized) {
-        volatile unsigned int *const UARTDR = (unsigned int *) DW_UART_THR;
+        volatile unsigned int *const UARTDR  = (unsigned int *) DW_UART_THR;
+        volatile unsigned int *const UARTLSR = (unsigned int *) DW_UART_LSR;
+
         // 如果是 '\n'，先发送 '\r'
         if (c == '\n') {
-            *UARTDR = (unsigned int) '\r';
+            while (!(*UARTLSR & DW_UART_LSR_THRE))
+                ;  // 等待可写
+            *UARTDR = '\r';
         }
-        *UARTDR = (unsigned int) c;
+
+        while (!(*UARTLSR & DW_UART_LSR_THRE))
+            ;  // 等待可写
+        *UARTDR = c;
         return;
     }
     if (dw_uart_putchar_nb(c))
         return;
-    
+
     int timeout = 10000;
     while (timeout-- > 0) {
         if (dw_uart_putchar_nb(c))
