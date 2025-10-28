@@ -6,15 +6,8 @@
 #include "t_exception.h"
 #include "lib/rand.h"
 
-// 调度器函数声明（在task模块中实现）
-extern void
-scheduler_tick(uint32_t cpu_id);
-
 // 调度标志位（在exception模块中定义）
 extern volatile int need_schedule_flag;
-// 检查并唤醒到期的睡眠任务
-extern void
-wake_up_sleeping_tasks(uint32_t cpu_id);
 
 // 全局变量
 volatile uint64_t g_system_ticks    = 0;
@@ -111,12 +104,6 @@ timer_handler(uint64_t *stack_pointer)
 
     // 调度下一个tick
     timer_schedule_next_tick();
-
-    // 调用调度器tick函数更新统计信息（但不直接调度）
-    uint32_t current_cpu = get_current_cpu_id();
-    scheduler_tick(current_cpu);
-
-    wake_up_sleeping_tasks(current_cpu);
 
     // 设置调度标志位，延迟到中断处理完成后再调度
     // 这样可以确保GIC的EOIR和DIR已经写入，避免中断丢失

@@ -71,11 +71,6 @@ handle_irq_exception(uint64_t *stack_pointer)
     // 检查是否需要调度
     if (need_schedule_flag) {
         need_schedule_flag = 0;
-        uint32_t cpu_id    = get_current_cpu_id();
-
-        // 声明外部延迟调度函数
-        extern void scheduler_delayed_schedule(uint32_t cpu_id);
-        scheduler_delayed_schedule(cpu_id);
     }
 }
 

@@ -8,7 +8,6 @@
 #include "dev/cru.h"
 #include "dev/scmi.h"
 
-#include "t_task.h"
 #include "t_sysreg.h"
 
 
