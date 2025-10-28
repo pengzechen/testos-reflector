@@ -153,7 +153,11 @@ el1_second_start:
     msr     cpacr_el1, x0
     isb
 
+    mov x6, #6
+
     bl enable_mmu
+
+    mov x11, #11
 
     adrp x1, t_secondary_main
     add  x1, x1, :lo12:t_secondary_main
@@ -173,6 +177,8 @@ init_mmu:
     bic x1, x1, #(1 << 12)   // clear I
     msr sctlr_el1, x1
     isb
+   
+    mov x7, #7
 
     // 2. Write MAIR_EL1 (memory attribute table)
     ldr x1, =(MAIR_VALUE)     // or movz/movk sequence
@@ -189,10 +195,14 @@ init_mmu:
     // 4. Set TTBR0_EL1 (page table base)
     msr ttbr0_el1, x0
 
+    mov x8, #8
+
     // 5. Invalidate TLBs for EL1
     tlbi vmalle1
     dsb sy
     isb
+
+    mov x9, #9
 
     // 6. Enable caches and MMU
     mrs x1, sctlr_el1
@@ -200,6 +210,12 @@ init_mmu:
     orr x1, x1, #(1 << 2)     // C = 1 enable data cache
     orr x1, x1, #(1 << 12)    // I = 1 enable instr cache
     msr sctlr_el1, x1
+    isb
+
+    mov x10, #10
+
+    tlbi vmalle1
+    dsb sy
     isb
 
     ret

@@ -114,10 +114,6 @@ t_secondary_main(uint64_t cpu_id)
 
 // ============================== 首核 ============================
 
-void
-reorder_test();
-
-
 // 主内核入口函数
 void
 t_kernel_main(uint64_t id)
@@ -148,11 +144,39 @@ t_kernel_main(uint64_t id)
 
     // 启动多核
     start_secondary_cpus();
-    for (int i = 1; i < T_SMP_NUM; i++) {
-        while (cpu_online[i] == 0)
-            ;  // busy wait
+    
+    {
+        // 最多等待 5 秒让所有副核就绪；全部就绪则提前结束等待
+        uint64_t freq        = timer_get_frequency();
+        uint64_t start_ticks = CNTPCT_EL0_READ();
+        uint64_t deadline    = start_ticks + 5ULL * freq;  // 5 秒超时
+
+        int all_online = 0;
+        while (CNTPCT_EL0_READ() < deadline) {
+            all_online = 1;
+            for (int i = 1; i < T_SMP_NUM; i++) {
+                if (cpu_online[i] == 0) {
+                    all_online = 0;
+                    break;
+                }
+            }
+            if (all_online)
+                break;
+            // 小幅让步，避免过度占用总线
+            asm volatile("nop");
+        }
+
+        if (all_online) {
+            logger_info("All %d secondary cores online within 5 seconds.\n", T_SMP_NUM - 1);
+        } else {
+            logger_warn("Timeout after 5 seconds: some secondary cores are not online.\n");
+            for (int i = 1; i < T_SMP_NUM; i++) {
+                if (cpu_online[i] == 0) {
+                    logger_warn("  - core %d NOT online\n", i);
+                }
+            }
+        }
     }
-    logger_warn("main core wait %d cores ok!\n", T_SMP_NUM - 1);
 
 
     // 启用定时器

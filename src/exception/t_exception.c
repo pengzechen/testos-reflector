@@ -17,6 +17,17 @@ irq_install(int vector, void (*h)(uint64_t *))
     g_handler_vec[vector] = h;
 }
 
+static inline uint64_t read_far_el1(void) {
+    uint64_t val;
+    __asm__ volatile (
+        "mrs %0, far_el1"   // 将 FAR_EL1 寄存器的值读到 val
+        : "=r"(val)         // 输出操作数
+        :                   // 无输入操作数
+        :                   // 无破坏的寄存器
+    );
+    return val;
+}
+
 void
 handle_sync_exception(uint64_t *stack_pointer)
 {
@@ -28,6 +39,7 @@ handle_sync_exception(uint64_t *stack_pointer)
 
     logger("el1 esr: %x\n", el1_esr);
     logger("ec: %x\n", ec);
+    logger("far_el1: %x\n", read_far_el1());
 
     logger("This is handle_sync_exception: \n");
     for (int i = 0; i < 31; i++) {
@@ -41,7 +53,7 @@ handle_sync_exception(uint64_t *stack_pointer)
 
     logger("usp: %x, elr: %x, spsr: %x\n", usp_value, elr_el1_value, spsr_value);
 
-    logger_warn("wfi");
+    logger_warn("wfi\n");
     while (1)
         WFI();
 }
