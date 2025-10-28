@@ -11,7 +11,6 @@
 #include "lib/sort.h"
 #include "dev/t_timer.h"
 
-#include "reorder.h"
 #include "mem/cache.h"
 
 #define MAX_M 544
@@ -116,11 +115,7 @@ rand_int()
 }
 
 
-int
-reorder_entry_cmp(const void *a, const void *b)
-{
-    return ((reorder_entry_t *) a)->dst_index - ((reorder_entry_t *) b)->dst_index;
-}
+
 
 // ======================================================
 // 主测试函数
@@ -229,32 +224,14 @@ rknpu_test(void)
     }
 
     
-    
     // --- 2. 第一次重排，生成按 NPU 内存布局的矩阵缓存 ---
     int8_t *matrixB_int8_layout = rkmem_alloc(K * N);  // 按 NPU 内存布局
     int8_t *matrixA_int8_layout = rkmem_alloc(M * K);
 
-    /*
-    // 这个收益很小了
-    reorder_entry_t *weight_entries = rkmem_alloc(sizeof(reorder_entry_t) * K * N);
-    for (uint32_t i = 0; i < K * N; i++) {
-        weight_entries[i].dst_index = weight_map[i];
-        weight_entries[i].src_index = i;
-    }
-    按目标位置排序（保证写连续）
-    qsort(weight_entries, K * N, sizeof(reorder_entry_t), reorder_entry_cmp);
-    第三版
-    reorder_matrix_multi_core_entries(matrixB_int8_layout, matrixB, weight_entries, K * N, 8);
-    */
-
     // --- 3. 可选：CPU 软件模拟，用于验证 ---
     logger_warn("current tick (cpu compute before): %d\n", timer_get_system_ticks());
-
     matmul_int(M, K, N, (int8_t *) &matrixA, (int8_t *) &matrixB, (int32_t *) &expected_result);
-
     logger_warn("current tick (cpu compute after): %d\n", timer_get_system_ticks());
-
-
 
 
     logger("layout before: %d\n", timer_get_system_ticks());
@@ -263,14 +240,6 @@ rknpu_test(void)
     for (int i = 0; i < K * N; i++) {
         matrixB_int8_layout[weight_map[i]] = matrixB[i];
     }
-    // 第二版
-    // reorder_matrix_multi_core(matrixB_int8_layout,
-    //                           matrixB,
-    //                           (const uint32_t *) weight_map,
-    //                           K * N,
-    //                           2);
-    // logger("layout after use multi core reorder: %d\n", timer_get_system_ticks());
-
     for (int i = 0; i < M * K; i++) {
         matrixA_int8_layout[feature_map[i]] = matrixA[i];
     }
