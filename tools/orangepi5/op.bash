@@ -22,3 +22,14 @@ sudo rkdeveloptool wl 0 output/images/Orangepi5plus_1.2.0_ubuntu_jammy_server_li
 
 sudo scp ./output/debs/linux-image-legacy-rockchip-rk3588_1.2.0_arm64.deb  orangepi@192.168.1.28:/home/orangepi
 sudo apt purge -y linux-image-legacy-rockchip-rk3588 && sudo dpkg -i linux-image-legacy-rockchip-rk3588_1.2.0_arm64.deb && sudo reboot 
+
+
+# 烧文件系统
+make test_app
+sudo rkdeveloptool db  /home/ajax/Projects/operating-system/testos-reflector-src/tools/orangepi5/MiniLoaderAll.bin
+sudo rkdeveloptool gpt /home/ajax/Projects/rk3588/StarryOS/crates/axplat-opi5p/tools/orangepi5/parameter.txt
+sudo rkdeveloptool cs 2
+sudo rkdeveloptool wlx root /home/ajax/Projects/rk3588/StarryOS/arceos/disk.img
+
+make ARCH=aarch64 LOG=debug opi5p
+make ARCH=aarch64 LOG=debug flash
