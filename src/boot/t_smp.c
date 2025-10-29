@@ -27,6 +27,11 @@ start_secondary_cpus()
             logger_error("smc_call failed!\n");
         }
 
+        // 做一点休眠 保证第二个核 初始化完成
+        for (int j = 0; j < 0xff; j++)
+            for (int k = 0; k < 0xffff; k++)
+                ;
+
         logger_info("core %d thread info addr: %llx\n",
                i,
                (void *) (_t_stack_top_second - T_STACK_SIZE * i));

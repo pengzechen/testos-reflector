@@ -8,10 +8,10 @@
 #define PAGE_TABLE_ALIGNMENT 4096  // 页表对齐要求 (4KB)
 
 /* 页表定义 - 启动时使用的简单映射 */
-static uint64_t pt0[PAGE_TABLE_ENTRIES]
+uint64_t pt0[PAGE_TABLE_ENTRIES]
     __attribute__((aligned(PAGE_TABLE_ALIGNMENT), section(".data")));  // L0 页表
 
-static uint64_t pt1[PAGE_TABLE_ENTRIES]
+uint64_t pt1[PAGE_TABLE_ENTRIES]
     __attribute__((aligned(PAGE_TABLE_ALIGNMENT), section(".data")));  // L1 页表
 /**
  * @brief 设置页表项指向下一级页表
@@ -57,8 +57,8 @@ init_page_table()
 }
 
 void
-enable_mmu(void)
+set_pg_base(void)
 {
-    extern void init_mmu(uint64_t);
-    init_mmu((uint64_t) (void *) pt0);
+    uint64_t pg_base = (uint64_t)(void *)pt0;
+    asm volatile("msr ttbr0_el1, %0" : : "r"(pg_base));
 }

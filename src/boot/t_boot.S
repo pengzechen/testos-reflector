@@ -10,7 +10,7 @@
 .global t_second_entry
 .global init_mmu
 
-.extern enable_mmu
+.extern set_pg_base
 .extern init_page_table
 
 // 从el3跳转到el1
@@ -72,7 +72,8 @@ el1_start:
     isb        
 
     bl init_page_table
-    bl enable_mmu
+    bl set_pg_base
+    bl init_mmu
 
     // 清空bss
     bl t_clear_bsss
@@ -153,11 +154,12 @@ el1_second_start:
     msr     cpacr_el1, x0
     isb
 
-    mov x6, #6
+    mov x6, #6  // debug use
 
-    bl enable_mmu
+    bl set_pg_base
+    bl init_mmu
 
-    mov x11, #11
+    mov x11, #11 // debug use
 
     adrp x1, t_secondary_main
     add  x1, x1, :lo12:t_secondary_main
@@ -177,8 +179,8 @@ init_mmu:
     bic x1, x1, #(1 << 12)   // clear I
     msr sctlr_el1, x1
     isb
-   
-    mov x7, #7
+
+    mov x7, #7  // debug use
 
     // 2. Write MAIR_EL1 (memory attribute table)
     ldr x1, =(MAIR_VALUE)     // or movz/movk sequence
@@ -192,17 +194,14 @@ init_mmu:
     msr tcr_el1, x1
     isb
 
-    // 4. Set TTBR0_EL1 (page table base)
-    msr ttbr0_el1, x0
-
-    mov x8, #8
+    mov x8, #8 // debug use
 
     // 5. Invalidate TLBs for EL1
     tlbi vmalle1
     dsb sy
     isb
 
-    mov x9, #9
+    mov x9, #9 // debug use
 
     // 6. Enable caches and MMU
     mrs x1, sctlr_el1
@@ -212,11 +211,7 @@ init_mmu:
     msr sctlr_el1, x1
     isb
 
-    mov x10, #10
-
-    tlbi vmalle1
-    dsb sy
-    isb
+    mov x10, #10 // debug use
 
     ret
 
