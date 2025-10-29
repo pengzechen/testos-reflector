@@ -112,13 +112,14 @@ timer_handler(uint64_t *stack_pointer)
     // 更新调度统计
     g_timer_stats.total_schedules++;
 
-    // 每100个tick打印一次信息（每1秒，因为100Hz）
-    if (g_system_ticks % (TIMER_FREQUENCY_HZ * 30) == 0) {
-        logger_info("Timer: %llu seconds, %llu ticks, %llu interrupts\n",
-                    g_system_ticks / TIMER_FREQUENCY_HZ,
-                    g_system_ticks,
-                    g_timer_stats.total_interrupts);
-    }
+    // 每30秒打印一次信息
+    // ❌ 不要在中断中打印！会导致TX buffer一直有数据
+    // if (g_system_ticks % (TIMER_FREQUENCY_HZ * 30) == 0) {
+    //     logger_info("Timer: %llu seconds, %llu ticks, %llu interrupts\n",
+    //                 g_system_ticks / TIMER_FREQUENCY_HZ,
+    //                 g_system_ticks,
+    //                 g_timer_stats.total_interrupts);
+    // }
 
     // 前几个中断打印调试信息
     if (g_system_ticks <= 10) {

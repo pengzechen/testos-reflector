@@ -16,6 +16,7 @@
 #define DW_UART_LSR   (DW_UART_BASE + 0x14) // Line Status Register
 #define DW_UART_MSR   (DW_UART_BASE + 0x18) // Modem Status Register
 #define DW_UART_SCR   (DW_UART_BASE + 0x1C) // Scratch Register
+#define DW_UART_USR   (DW_UART_BASE + 0x7C) // UART Status Register
 #define DW_UART_DLL   (DW_UART_BASE + 0x00) // Divisor Latch Low (when DLAB=1)
 #define DW_UART_DLM   (DW_UART_BASE + 0x04) // Divisor Latch High (when DLAB=1)
 
@@ -46,6 +47,10 @@ void dw_uart_flush(void);
 bool dw_uart_getchar_nb(char *c);
 bool dw_uart_rx_available(void);
 uint32_t dw_uart_tx_buffer_usage(void);
+void dw_uart_get_stats(uint32_t *tx_irqs, uint32_t *rx_irqs, uint32_t *tx_usage, uint32_t *rx_usage);
+bool dw_uart_is_tx_interrupt_enabled(void);
+uint32_t dw_uart_get_last_iir(void);
+uint32_t dw_uart_get_tx_sent_total(void);
 void dw_uart_interrupt_handler(uint64_t *stack_pointer);
 
 #endif // __T_DW_UART_H__

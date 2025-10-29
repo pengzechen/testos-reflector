@@ -137,7 +137,7 @@ t_kernel_main(uint64_t id)
 
     gicv3_init();
 
-    // dw_uart_init();
+    
 
     timer_init();
     // timer_dump_info();
@@ -183,6 +183,7 @@ t_kernel_main(uint64_t id)
     timer_enable();
     enable_interrupts();  // daifclr 2
     logger_info("After enabling interrupts\n");
+    dw_uart_init();
 
     t_run_printf_tests();
 
@@ -206,6 +207,8 @@ t_kernel_main(uint64_t id)
     logger_info("  Allocated 256 KB at %p\n", mem1);
     logger_info("  Allocated 512 KB at %p\n", mem2);
 
+#if 1
+    {
     // scmi 时钟
     // todo fix.
     // enable_scmi_clock(6);
@@ -219,9 +222,92 @@ t_kernel_main(uint64_t id)
     // 测试
     rknpu_test();
 
-    // reorder_test();
+    }
+#endif
 
+    logger_info("========================================\n");
+    logger_info("UART Interrupt Test Started\n");
+    logger_info("Press any key for echo test...\n");
+    logger_info("========================================\n");
+
+    uint64_t last_print_tick = timer_get_system_ticks();
+    const uint64_t PRINT_INTERVAL = TIMER_FREQUENCY_HZ * 5;  // 每 5 秒打印一次
+    uint32_t test_counter = 0;
+    bool periodic_print_enabled = true;  // 控制周期性打印
+
+    while (1) {
+        uint64_t current_tick = timer_get_system_ticks();
+        
+        // 定期输出测试字符串
+        if (periodic_print_enabled && current_tick - last_print_tick >= PRINT_INTERVAL) {
+            last_print_tick = current_tick;
+            test_counter++;
+            logger_info("[UART Test #%u] Uptime: %llu seconds, Ticks: %llu\n",
+                       test_counter,
+                       current_tick / TIMER_FREQUENCY_HZ,
+                       current_tick);
+        }
+        
+        // 检查并回显键盘输入
+        char c;
+        if (dw_uart_getchar_nb(&c)) {
+            // 回显字符
+            // logger_info("Echo: '%c' (0x%02x, ASCII %d)\n", 
+            //            c >= 32 && c <= 126 ? c : '?',  // 只显示可打印字符
+            //            (unsigned char)c, 
+            //            (unsigned char)c);
+            
+            // 特殊命令处理
+            if (c == 'h' || c == 'H') {
+                logger_info("\n=== UART Test Commands ===\n");
+                logger_info("  h/H - Show this help\n");
+                logger_info("  s/S - Show statistics\n");
+                logger_info("  t/T - Show current time\n");
+                logger_info("  p/P - Toggle periodic print\n");
+                logger_info("  q/Q - Quit (return to WFI loop)\n");
+                logger_info("==========================\n\n");
+            } else if (c == 'p' || c == 'P') {
+                periodic_print_enabled = !periodic_print_enabled;
+                logger_info("Periodic print: %s\n", periodic_print_enabled ? "ENABLED" : "DISABLED");
+            } else if (c == 's' || c == 'S') {
+                uint32_t tx_irqs, rx_irqs, tx_usage, rx_usage;
+                dw_uart_get_stats(&tx_irqs, &rx_irqs, &tx_usage, &rx_usage);
+                bool tx_int_enabled = dw_uart_is_tx_interrupt_enabled();
+                uint32_t last_iir = dw_uart_get_last_iir();
+                uint32_t tx_sent = dw_uart_get_tx_sent_total();
+                
+                logger_info("\n=== UART Statistics ===\n");
+                logger_info("  TX Buffer Usage: %u/%d bytes\n", tx_usage, 1024);
+                logger_info("  RX Buffer Usage: %u/%d bytes\n", rx_usage, 1024);
+                logger_info("  TX Interrupts: %u\n", tx_irqs);
+                logger_info("  TX Sent Bytes: %u\n", tx_sent);
+                logger_info("  RX Interrupts: %u\n", rx_irqs);
+                logger_info("  TX INT Enabled: %s\n", tx_int_enabled ? "YES" : "NO");
+                logger_info("  Last IIR: 0x%x\n", last_iir);
+                logger_info("  System Ticks: %llu\n", timer_get_system_ticks());
+                logger_info("  Uptime: %llu seconds\n", 
+                           timer_get_system_ticks() / TIMER_FREQUENCY_HZ);
+                logger_info("=======================\n\n");
+            } else if (c == 't' || c == 'T') {
+                uint64_t uptime_ms = timer_get_uptime_ms();
+                logger_info("\n=== Current Time ===\n");
+                logger_info("  Uptime: %llu.%03llu seconds\n",
+                           uptime_ms / 1000, uptime_ms % 1000);
+                logger_info("  Ticks: %llu\n", timer_get_system_ticks());
+                logger_info("====================\n\n");
+            } else if (c == 'q' || c == 'Q') {
+                logger_info("Exiting UART test, entering WFI loop...\n");
+                break;
+            }
+        }
+        
+        WFI();
+    }
+
+    logger_info("UART test completed, entering idle loop\n");
+    
     while (1) {
         WFI();
     }
 }
+

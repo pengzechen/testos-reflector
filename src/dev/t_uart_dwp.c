@@ -20,6 +20,12 @@ static dw_uart_buffer_t tx_buffer           = {0};
 static dw_uart_buffer_t rx_buffer           = {0};
 static volatile bool    dw_uart_initialized = false;
 
+// 调试计数器
+static volatile uint32_t tx_irq_count = 0;
+static volatile uint32_t rx_irq_count = 0;
+static volatile uint32_t last_iir_value = 0;  // 记录最后一次IIR值
+static volatile uint32_t tx_sent_total = 0;   // 总共发送的字节数
+
 static bool
 buffer_is_empty(dw_uart_buffer_t *buf)
 {
@@ -70,6 +76,10 @@ static void
 dw_uart_enable_tx_interrupt(void)
 {
     uint32_t ier = read32((void *) DW_UART_IER);
+    if (!(ier & DW_UART_IER_THRI)) {
+        // 只在真正需要启用时才打印（避免重复启用的噪音）
+        // logger_info("[UART_DEBUG] Enable TX interrupt, buffer=%u\n", tx_buffer.count);
+    }
     ier |= DW_UART_IER_THRI;
     write32(ier, (void *) DW_UART_IER);
 }
@@ -78,6 +88,7 @@ static void
 dw_uart_disable_tx_interrupt(void)
 {
     uint32_t ier = read32((void *) DW_UART_IER);
+    // logger_info("[UART_DEBUG] Disable TX interrupt, buffer=%u\n", tx_buffer.count);
     ier &= ~DW_UART_IER_THRI;
     write32(ier, (void *) DW_UART_IER);
 }
@@ -96,39 +107,56 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
     // logger_info("Uart handler invoke...\n");
 
     uint32_t iir = read32((void *) DW_UART_IIR) & 0xF;
-    if (iir == 0x4) {  // RX 有人按下了键盘的键， 可以读数据了
-
+    last_iir_value = iir;  // 记录IIR值用于调试
+    
+    if (iir == 0x4 || iir == 0xC) {  // RX 中断
+        rx_irq_count++;  // 调试计数
         spin_lock_irqsave(&rx_buffer.lock);
         while (dw_uart_rx_ready()) {
             char c = (char) read32((void *) DW_UART_RBR);
-            logger_info("got key: %c\n", c);
+            // ❌ 不要在中断中打印！会导致死锁和重复输出
+            // logger_info("got key: %c\n", c);
             buffer_put(&rx_buffer, c);
         }
         spin_unlock_irqrestore(&rx_buffer.lock);
     }
-    if (iir == 0x2) {  // TX  **TX 中断是“可以发下一个字节了”**的信号
+    
+    // 0x7 = Busy Detect, 0x2 = TX Holding Register Empty
+    // Busy Detect 表示硬件忙，但我们仍然可以尝试发送数据
+    if (iir == 0x2 || iir == 0x7) {  // TX 中断或 Busy Detect
+        if (iir == 0x7) {
+            // 读取 USR 寄存器来清除 Busy Detect 中断
+            (void)read32((void *) DW_UART_USR);
+        }
+        
+        tx_irq_count++;  // 调试计数
         spin_lock_irqsave(&tx_buffer.lock);
 
-        while (dw_uart_tx_ready() && !buffer_is_empty(&tx_buffer)) {
+        int sent=0; const int MAX_BATCH=16; while(sent<MAX_BATCH && !buffer_is_empty(&tx_buffer)){
             char c;
             if (buffer_get(&tx_buffer, &c)) {
                 write32((uint32_t) c, (void *) DW_UART_THR);
+                sent++;
+                tx_sent_total++;  // 记录总共发送的字节数
             }
         }
-        if (buffer_is_empty(&tx_buffer)) {
+        bool is_empty = buffer_is_empty(&tx_buffer);
+        spin_unlock_irqrestore(&tx_buffer.lock);
+        
+        // 在释放锁之后再禁用TX中断，避免竞态条件
+        if (is_empty) {
             /*
                 它的意义是：
                     当我们已经把所有待发送的数据都写给硬件时，就没必要再关心 TX 中断了。
                 因为：
-                    硬件下次“THR 空了”时，我们也没数据可以写；
-                    如果不关中断，硬件会不停地产生 TX 中断，每次都发现“没数据”，浪费 CPU。
+                    硬件下次"THR 空了"时，我们也没数据可以写；
+                    如果不关中断，硬件会不停地产生 TX 中断，每次都发现"没数据"，浪费 CPU。
             */
             dw_uart_disable_tx_interrupt();
         }
-        spin_unlock_irqrestore(&tx_buffer.lock);
     }
-}
 
+}
 static inline void
 delay_loop(unsigned int n)
 {
@@ -178,7 +206,7 @@ dw_uart_init(void)
     // 使能 RX 中断
     dw_uart_enable_rx_interrupt();
 
-    dw_uart_enable_tx_interrupt();
+    // dw_uart_enable_tx_interrupt();
 
 
     gicv3_set_int_trigger(DW_UART_IRQ, 0);  // 设置为电平触发
@@ -219,10 +247,14 @@ dw_uart_putchar_nb(char c)
     }
 
     if (buffer_is_empty(&tx_buffer) && dw_uart_tx_ready()) {
-        // 发送缓冲区满了，并且硬件可以发送新数据
-        // 直接发送
+        // 缓冲区为空，并且硬件可以发送新数据
+        // 直接发送，不经过缓冲区
         write32((uint32_t) c, (void *) DW_UART_THR);
         success = true;
+        // 直接发送后，如果buffer中还有数据（比如刚才放入的'\r'），需要确保TX中断启用
+        if (!buffer_is_empty(&tx_buffer)) {
+            dw_uart_enable_tx_interrupt();
+        }
     } else {
         success = buffer_put(&tx_buffer, c);
         if (success) {
@@ -328,4 +360,39 @@ dw_uart_tx_buffer_usage(void)
     uint32_t usage = tx_buffer.count;
     spin_unlock_irqrestore(&tx_buffer.lock);
     return usage;
+}
+
+void
+dw_uart_get_stats(uint32_t *tx_irqs, uint32_t *rx_irqs, uint32_t *tx_usage, uint32_t *rx_usage)
+{
+    if (tx_irqs) *tx_irqs = tx_irq_count;
+    if (rx_irqs) *rx_irqs = rx_irq_count;
+    if (tx_usage) *tx_usage = dw_uart_tx_buffer_usage();
+    if (rx_usage) {
+        spin_lock_irqsave(&rx_buffer.lock);
+        *rx_usage = rx_buffer.count;
+        spin_unlock_irqrestore(&rx_buffer.lock);
+    }
+}
+
+// 调试函数：检查TX中断是否启用
+bool
+dw_uart_is_tx_interrupt_enabled(void)
+{
+    uint32_t ier = read32((void *) DW_UART_IER);
+    return (ier & DW_UART_IER_THRI) != 0;
+}
+
+// 调试函数：获取最后一次IIR值
+uint32_t
+dw_uart_get_last_iir(void)
+{
+    return last_iir_value;
+}
+
+// 调试函数：获取总共发送的字节数
+uint32_t
+dw_uart_get_tx_sent_total(void)
+{
+    return tx_sent_total;
 }
