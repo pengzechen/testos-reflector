@@ -4,6 +4,7 @@
 #include "dev/t_gicv3.h"
 #include "dev/t_dw_uart.h"
 #include "dev/t_timer.h"
+#include "dev/xmodem_dw_uart.h"
 #include "npu/rknpu.h"
 #include "dev/cru.h"
 #include "dev/scmi.h"
@@ -114,6 +115,11 @@ t_secondary_main(uint64_t cpu_id)
 
 // ============================== 首核 ============================
 
+// XMODEM 接收缓冲区（全局变量，用于在命令间共享）
+#define XMODEM_BUF_SIZE (2 * 1024 * 1024)  // 2MB 缓冲区
+static uint8_t *g_xmodem_buf = NULL;
+static ssize_t g_last_received = 0;
+
 // 主内核入口函数
 void
 t_kernel_main(uint64_t id)
@@ -207,7 +213,7 @@ t_kernel_main(uint64_t id)
     logger_info("  Allocated 256 KB at %p\n", mem1);
     logger_info("  Allocated 512 KB at %p\n", mem2);
 
-#if 1
+#if 0
     {
     // scmi 时钟
     // todo fix.
@@ -264,8 +270,168 @@ t_kernel_main(uint64_t id)
                 logger_info("  s/S - Show statistics\n");
                 logger_info("  t/T - Show current time\n");
                 logger_info("  p/P - Toggle periodic print\n");
+                logger_info("  x/X - Start XMODEM file receive\n");
+                logger_info("  d/D - Dump received file data\n");
                 logger_info("  q/Q - Quit (return to WFI loop)\n");
                 logger_info("==========================\n\n");
+            } else if (c == 'd' || c == 'D') {
+                // 显示已接收的文件数据
+                if (g_xmodem_buf == NULL) {
+                    logger_warn("No file received yet. Use 'x' to receive a file first.\n");
+                } else if (g_last_received <= 0) {
+                    logger_warn("No valid file data. Received size: %ld\n", g_last_received);
+                } else {
+                    logger_info("\n=== Received File Data ===\n");
+                    logger_info("Buffer address: %p\n", g_xmodem_buf);
+                    logger_info("Total size: %ld bytes\n\n", g_last_received);
+                    
+                    // 显示前 256 字节（使用行缓冲，避免每个字节都加前缀）
+                    size_t display_len = g_last_received > 256 ? 256 : g_last_received;
+                    logger_info("First %ld bytes (hex):\n", display_len);
+                    
+                    char line[128];  // 行缓冲
+                    for (size_t i = 0; i < display_len; i++) {
+                        if (i % 16 == 0) {
+                            // 新行开始，输出地址
+                            my_snprintf(line, sizeof(line), "%04lx: ", i);
+                            dw_uart_putstr(line);
+                        }
+                        // 拼接十六进制字节
+                        my_snprintf(line, sizeof(line), "%02x ", g_xmodem_buf[i]);
+                        dw_uart_putstr(line);
+                        
+                        if ((i + 1) % 16 == 0) {
+                            // 行尾，输出 ASCII
+                            dw_uart_putstr(" |");
+                            for (size_t j = i - 15; j <= i; j++) {
+                                char ch = g_xmodem_buf[j];
+                                if (ch >= 32 && ch <= 126) {
+                                    char ascii[2] = {ch, '\0'};
+                                    dw_uart_putstr(ascii);
+                                } else {
+                                    dw_uart_putstr(".");
+                                }
+                            }
+                            dw_uart_putstr("|\n");
+                        }
+                    }
+                    // 处理不完整的最后一行
+                    if (display_len % 16 != 0) {
+                        size_t last_line_start = (display_len / 16) * 16;
+                        size_t last_line_len = display_len % 16;
+                        // 填充空格
+                        for (size_t j = 0; j < (16 - last_line_len) * 3; j++) {
+                            dw_uart_putstr(" ");
+                        }
+                        dw_uart_putstr(" |");
+                        for (size_t j = last_line_start; j < display_len; j++) {
+                            char ch = g_xmodem_buf[j];
+                            if (ch >= 32 && ch <= 126) {
+                                char ascii[2] = {ch, '\0'};
+                                dw_uart_putstr(ascii);
+                            } else {
+                                dw_uart_putstr(".");
+                            }
+                        }
+                        dw_uart_putstr("|\n");
+                    }
+                    
+                    // 显示最后 256 字节
+                    if (g_last_received > 256) {
+                        size_t start = g_last_received - 256;
+                        logger_info("\nLast 256 bytes (hex):\n");
+                        for (size_t i = start; i < (size_t)g_last_received; i++) {
+                            if ((i - start) % 16 == 0) {
+                                my_snprintf(line, sizeof(line), "%04lx: ", i);
+                                dw_uart_putstr(line);
+                            }
+                            my_snprintf(line, sizeof(line), "%02x ", g_xmodem_buf[i]);
+                            dw_uart_putstr(line);
+                            
+                            if ((i - start + 1) % 16 == 0) {
+                                dw_uart_putstr(" |");
+                                for (size_t j = i - 15; j <= i; j++) {
+                                    char ch = g_xmodem_buf[j];
+                                    if (ch >= 32 && ch <= 126) {
+                                        char ascii[2] = {ch, '\0'};
+                                        dw_uart_putstr(ascii);
+                                    } else {
+                                        dw_uart_putstr(".");
+                                    }
+                                }
+                                dw_uart_putstr("|\n");
+                            }
+                        }
+                        // 处理最后一行
+                        size_t last_bytes = (g_last_received - start) % 16;
+                        if (last_bytes != 0) {
+                            for (size_t j = 0; j < (16 - last_bytes) * 3; j++) {
+                                dw_uart_putstr(" ");
+                            }
+                            dw_uart_putstr(" |");
+                            size_t last_line_start = g_last_received - last_bytes;
+                            for (size_t j = last_line_start; j < (size_t)g_last_received; j++) {
+                                char ch = g_xmodem_buf[j];
+                                if (ch >= 32 && ch <= 126) {
+                                    char ascii[2] = {ch, '\0'};
+                                    dw_uart_putstr(ascii);
+                                } else {
+                                    dw_uart_putstr(".");
+                                }
+                            }
+                            dw_uart_putstr("|\n");
+                        }
+                    }
+                    
+                    logger_info("\n==========================\n\n");
+                }
+            } else if (c == 'x' || c == 'X') {
+                // XMODEM 文件接收测试
+                if (g_xmodem_buf == NULL) {
+                    g_xmodem_buf = (uint8_t *)rkmem_alloc(XMODEM_BUF_SIZE);
+                    if (g_xmodem_buf == NULL) {
+                        logger_error("Failed to allocate XMODEM buffer\n");
+                    } else {
+                        logger_info("Allocated XMODEM buffer at %p\n", g_xmodem_buf);
+                    }
+                }
+                
+                if (g_xmodem_buf != NULL) {
+                    logger_info("\n=== Starting XMODEM-1K Receive ===\n");
+                    logger_info("Buffer size: %d bytes\n", XMODEM_BUF_SIZE);
+                    logger_info("Please start sending file using XMODEM-1K protocol...\n");
+                    logger_info("Example: sx -k yourfile.bin < /dev/ttyUSB0 > /dev/ttyUSB0\n");
+                    logger_info("===================================\n\n");
+                    
+                    // 禁用周期性打印，避免干扰传输
+                    bool old_periodic = periodic_print_enabled;
+                    periodic_print_enabled = false;
+                    
+                    // 调用 xmodem 接收函数
+                    ssize_t received = xmodem_receive_1k(g_xmodem_buf, XMODEM_BUF_SIZE);
+                    
+                    // 保存接收结果
+                    g_last_received = received;
+                    
+                    // 恢复周期性打印
+                    periodic_print_enabled = old_periodic;
+                    
+                    if (received > 0) {
+                        logger_info("\n=== XMODEM Receive SUCCESS ===\n");
+                        logger_info("Received: %ld bytes\n", received);
+                        logger_info("Buffer address: %p\n", g_xmodem_buf);
+                        logger_info("Use 'd' command to view the data\n");
+                        logger_info("==============================\n\n");
+                    } else if (received == 0) {
+                        logger_warn("\n=== XMODEM Receive CANCELLED ===\n");
+                        logger_warn("Transfer was cancelled by sender\n");
+                        logger_warn("================================\n\n");
+                    } else {
+                        logger_error("\n=== XMODEM Receive FAILED ===\n");
+                        logger_error("Error code: %ld\n", received);
+                        logger_error("=============================\n\n");
+                    }
+                }
             } else if (c == 'p' || c == 'P') {
                 periodic_print_enabled = !periodic_print_enabled;
                 logger_info("Periodic print: %s\n", periodic_print_enabled ? "ENABLED" : "DISABLED");

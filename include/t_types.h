@@ -17,6 +17,7 @@ typedef _Bool bool;
 #define true  1
 
 typedef unsigned long long size_t;
+typedef signed long long   ssize_t;
 typedef unsigned long long vaddr_t;  // Virtual address type
 typedef unsigned long long paddr_t;  // Physical address type
 
