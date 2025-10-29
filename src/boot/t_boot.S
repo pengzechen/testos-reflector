@@ -79,6 +79,7 @@ t_second_entry:
     // 计算从核栈地址: _t_stack_top_second - (core_id * T_STACK_SIZE)
     adrp    x1, _t_stack_top_second
     add     x1, x1, :lo12:_t_stack_top_second
+    sub     x0, x0, #1
     mov     x2, #T_STACK_SIZE
     mul     x3, x0, x2
     sub     x1, x1, x3
