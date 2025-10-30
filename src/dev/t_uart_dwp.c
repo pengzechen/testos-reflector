@@ -21,10 +21,10 @@ static dw_uart_buffer_t rx_buffer           = {0};
 static volatile bool    dw_uart_initialized = false;
 
 // 调试计数器
-static volatile uint32_t tx_irq_count = 0;
-static volatile uint32_t rx_irq_count = 0;
+static volatile uint32_t tx_irq_count   = 0;
+static volatile uint32_t rx_irq_count   = 0;
 static volatile uint32_t last_iir_value = 0;  // 记录最后一次IIR值
-static volatile uint32_t tx_sent_total = 0;   // 总共发送的字节数
+static volatile uint32_t tx_sent_total  = 0;  // 总共发送的字节数
 
 static bool
 buffer_is_empty(dw_uart_buffer_t *buf)
@@ -83,6 +83,7 @@ dw_uart_enable_tx_interrupt(void)
     ier |= DW_UART_IER_THRI;
     write32(ier, (void *) DW_UART_IER);
 }
+
 // 禁用发送中断， 我已经没有数据可以发送了
 static void
 dw_uart_disable_tx_interrupt(void)
@@ -92,6 +93,7 @@ dw_uart_disable_tx_interrupt(void)
     ier &= ~DW_UART_IER_THRI;
     write32(ier, (void *) DW_UART_IER);
 }
+
 // 启用接收中断， 我准备好接收数据了
 static void
 dw_uart_enable_rx_interrupt(void)
@@ -106,11 +108,11 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
 {
     // logger_info("Uart handler invoke...\n");
 
-    uint32_t iir = read32((void *) DW_UART_IIR) & 0xF;
+    uint32_t iir   = read32((void *) DW_UART_IIR) & 0xF;
     last_iir_value = iir;  // 记录IIR值用于调试
-    
+
     if (iir == 0x4 || iir == 0xC) {  // RX 中断
-        rx_irq_count++;  // 调试计数
+        rx_irq_count++;              // 调试计数
         spin_lock_irqsave(&rx_buffer.lock);
         while (dw_uart_rx_ready()) {
             char c = (char) read32((void *) DW_UART_RBR);
@@ -120,19 +122,21 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
         }
         spin_unlock_irqrestore(&rx_buffer.lock);
     }
-    
+
     // 0x7 = Busy Detect, 0x2 = TX Holding Register Empty
     // Busy Detect 表示硬件忙，但我们仍然可以尝试发送数据
     if (iir == 0x2 || iir == 0x7) {  // TX 中断或 Busy Detect
         if (iir == 0x7) {
             // 读取 USR 寄存器来清除 Busy Detect 中断
-            (void)read32((void *) DW_UART_USR);
+            (void) read32((void *) DW_UART_USR);
         }
-        
+
         tx_irq_count++;  // 调试计数
         spin_lock_irqsave(&tx_buffer.lock);
 
-        int sent=0; const int MAX_BATCH=16; while(sent<MAX_BATCH && !buffer_is_empty(&tx_buffer)){
+        int       sent      = 0;
+        const int MAX_BATCH = 16;
+        while (sent < MAX_BATCH && !buffer_is_empty(&tx_buffer)) {
             char c;
             if (buffer_get(&tx_buffer, &c)) {
                 write32((uint32_t) c, (void *) DW_UART_THR);
@@ -142,7 +146,7 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
         }
         bool is_empty = buffer_is_empty(&tx_buffer);
         spin_unlock_irqrestore(&tx_buffer.lock);
-        
+
         // 在释放锁之后再禁用TX中断，避免竞态条件
         if (is_empty) {
             /*
@@ -155,14 +159,56 @@ dw_uart_interrupt_handler(uint64_t *stack_pointer)
             dw_uart_disable_tx_interrupt();
         }
     }
-
 }
-static inline void
-delay_loop(unsigned int n)
+
+/**
+ * dw_uart_wait_idle - 等待 UART 完全空闲
+ * 
+ * 同时检查两个寄存器：
+ * 1. USR.BUSY (bit 0): UART 整体忙碌状态（DW 特有，更严格）
+ * 2. LSR.TEMT (bit 6): 发送器空（标准 16550，更通用）
+ * 
+ * 这样可以安全地重新配置 UART，不会丢失数据或造成硬件异常
+ */
+static void
+dw_uart_wait_idle(void)
 {
-    for (volatile unsigned int i = 0; i < n; i++) {
+    for (int timeout = 100000; timeout > 0; timeout--) {
+        uint32_t usr = read32((void *) DW_UART_USR);
+        uint32_t lsr = read32((void *) DW_UART_LSR);
+        
+        // 检查 UART 不忙 且 发送器为空
+        if (!(usr & DW_UART_USR_BUSY) && (lsr & DW_UART_LSR_TEMT)) {
+            return;
+        }
+        
         asm volatile("nop");
     }
+    // 超时也继续，避免卡死
+}
+
+void
+dw_uart_early_init(void)
+{
+    // 等待 UART 空闲后再配置，避免丢失正在发送的数据
+    dw_uart_wait_idle();
+
+    // 关闭所有中断
+    write32(0, (void *) DW_UART_IER);
+
+    // 配置波特率（24MHz，1,500,000）
+    uint32_t lcr = read32((void *) DW_UART_LCR);
+    write32(lcr | DW_UART_LCR_DLAB, (void *) DW_UART_LCR);
+    write32(1, (void *) DW_UART_DLL);
+    write32(0, (void *) DW_UART_DLM);
+    write32(lcr & ~DW_UART_LCR_DLAB, (void *) DW_UART_LCR);
+
+    // 8N1
+    write32(0x3, (void *) DW_UART_LCR);
+
+    // 使能 FIFO
+    write32(DW_UART_FCR_ENABLE_FIFO | DW_UART_FCR_CLEAR_RCVR | DW_UART_FCR_CLEAR_XMIT,
+            (void *) DW_UART_FCR);
 }
 
 void
@@ -177,13 +223,11 @@ dw_uart_init(void)
     tx_buffer.head = tx_buffer.tail = tx_buffer.count = 0;
     rx_buffer.head = rx_buffer.tail = rx_buffer.count = 0;
 
-    delay_loop(100);
-    delay_loop(100);
-    delay_loop(100);
+    // 等待 UART 空闲后再配置，避免丢失正在发送的数据
+    dw_uart_wait_idle();
 
-    // 关闭 UART
+    // 关闭所有中断
     write32(0, (void *) DW_UART_IER);
-
 
     // 配置波特率（24MHz，1,500,000）
     uint32_t lcr = read32((void *) DW_UART_LCR);
@@ -208,7 +252,6 @@ dw_uart_init(void)
 
     // dw_uart_enable_tx_interrupt();
 
-
     gicv3_set_int_trigger(DW_UART_IRQ, 0);  // 设置为电平触发
 
     gicv3_set_int_target(DW_UART_IRQ, 0x1);  // 目标 CPU 0
@@ -229,104 +272,34 @@ dw_uart_putchar_nb(char c)
 {
     if (!dw_uart_initialized)
         return false;
+    
     spin_lock_irqsave(&tx_buffer.lock);
     bool success = false;
+    bool need_tx_int = false;
 
     // 处理换行：如果是 '\n'，先尝试发送 '\r'
     if (c == '\n') {
-        if (buffer_is_empty(&tx_buffer) && dw_uart_tx_ready()) {
-            write32((uint32_t) '\r', (void *) DW_UART_THR);
-        } else {
-            if (!buffer_put(&tx_buffer, '\r')) {
-                // 缓冲区满，先发送 '\r' 失败
-                spin_unlock_irqrestore(&tx_buffer.lock);
-                return false;
-            }
-            dw_uart_enable_tx_interrupt();
+        if (!buffer_put(&tx_buffer, '\r')) {
+            // 缓冲区满，连 '\r' 都放不下
+            spin_unlock_irqrestore(&tx_buffer.lock);
+            return false;
         }
+        need_tx_int = true;
     }
 
-    if (buffer_is_empty(&tx_buffer) && dw_uart_tx_ready()) {
-        // 缓冲区为空，并且硬件可以发送新数据
-        // 直接发送，不经过缓冲区
-        write32((uint32_t) c, (void *) DW_UART_THR);
-        success = true;
-        // 直接发送后，如果buffer中还有数据（比如刚才放入的'\r'），需要确保TX中断启用
-        if (!buffer_is_empty(&tx_buffer)) {
-            dw_uart_enable_tx_interrupt();
-        }
-    } else {
-        success = buffer_put(&tx_buffer, c);
-        if (success) {
-            dw_uart_enable_tx_interrupt();
-        }
+    // 尝试放入字符到缓冲区
+    success = buffer_put(&tx_buffer, c);
+    if (success) {
+        need_tx_int = true;
     }
+    
+    // 如果有数据入队，启用 TX 中断
+    if (need_tx_int) {
+        dw_uart_enable_tx_interrupt();
+    }
+    
     spin_unlock_irqrestore(&tx_buffer.lock);
     return success;
-}
-
-void
-dw_uart_putchar(char c)
-{
-    // 如果 UART 尚未初始化，直接写寄存器
-    if (!dw_uart_initialized) {
-        volatile unsigned int *const UARTDR  = (unsigned int *) DW_UART_THR;
-        volatile unsigned int *const UARTLSR = (unsigned int *) DW_UART_LSR;
-
-        // 如果是 '\n'，先发送 '\r'
-        if (c == '\n') {
-            while (!(*UARTLSR & DW_UART_LSR_THRE))
-                ;  // 等待可写
-            *UARTDR = '\r';
-        }
-
-        while (!(*UARTLSR & DW_UART_LSR_THRE))
-            ;  // 等待可写
-        *UARTDR = c;
-        return;
-    }
-    if (dw_uart_putchar_nb(c))
-        return;
-
-    int timeout = 10000;
-    while (timeout-- > 0) {
-        if (dw_uart_putchar_nb(c))
-            return;
-        for (int i = 0; i < 100; i++)
-            asm volatile("nop");
-    }
-    logger_warn("DWC UART TX buffer full, dropping character\n");
-}
-
-void
-dw_uart_putstr(const char *str)
-{
-    while (*str)
-        dw_uart_putchar(*str++);
-}
-
-void
-dw_uart_flush(void)
-{
-    if (!dw_uart_initialized)
-        return;
-    int timeout = 100000;
-    while (timeout-- > 0) {
-        spin_lock_irqsave(&tx_buffer.lock);
-        bool empty = (tx_buffer.head == tx_buffer.tail);
-        spin_unlock_irqrestore(&tx_buffer.lock);
-        if (empty)
-            break;
-        for (int i = 0; i < 10; i++)
-            asm volatile("nop");
-    }
-    timeout = 10000;
-    while (timeout-- > 0) {
-        if (dw_uart_tx_ready())
-            break;
-        for (int i = 0; i < 10; i++)
-            asm volatile("nop");
-    }
 }
 
 bool
@@ -340,6 +313,115 @@ dw_uart_getchar_nb(char *c)
     return success;
 }
 
+// early init 的时候会阻塞到发送完成 (等待时间未知)
+// int init 后会使用缓冲区和中断，一次失败仍会多次尝试 (可以设置重试次数)
+void
+dw_uart_putchar(char c)
+{
+    // 如果 UART 尚未初始化，直接写寄存器（阻塞模式）
+    if (!dw_uart_initialized) {
+        // 如果是 '\n'，先发送 '\r'
+        if (c == '\n') {
+            while (!(read32((void *) DW_UART_LSR) & DW_UART_LSR_THRE))
+                asm volatile("nop");
+            write32('\r', (void *) DW_UART_THR);
+        }
+
+        // 等待并发送字符
+        while (!(read32((void *) DW_UART_LSR) & DW_UART_LSR_THRE))
+            asm volatile("nop");
+        write32(c, (void *) DW_UART_THR);
+        return;
+    }
+    
+    // 已初始化：先尝试非阻塞发送
+    if (dw_uart_putchar_nb(c))
+        return;
+
+    // 缓冲区满，重试若干次
+    for (int retry = 0; retry < 10000; retry++) {
+        if (dw_uart_putchar_nb(c))
+            return;
+        // 短暂延迟，让中断有机会发送数据
+        for (int i = 0; i < 100; i++)
+            asm volatile("nop");
+    }
+    
+    // 超时仍然失败，丢弃字符
+    logger_warn("DWC UART TX buffer full, dropping character\n");
+}
+
+// early init 的时候会阻塞到接收数据 (等待时间未知)
+// int init 后会使用缓冲区和中断，如果无数据则睡眠 WFI
+char
+dw_uart_getchar(void)
+{
+    char c;
+
+    // 如果已经完整初始化（中断模式），使用缓冲区
+    if (dw_uart_initialized) {
+        while (!dw_uart_getchar_nb(&c)) {
+            // 等待数据到来
+            WFI();
+        }
+        return c;
+    }
+
+    // 否则直接轮询硬件（early init 模式或未初始化）
+    // 等待数据可用
+    while (!(read32((void *) DW_UART_LSR) & DW_UART_LSR_DR)) {
+        asm volatile("nop");
+    }
+
+    return (char) (read32((void *) DW_UART_RBR) & 0xFF);
+}
+
+void
+dw_uart_putstr(const char *str)
+{
+    while (*str)
+        dw_uart_putchar(*str++);
+}
+
+
+// ================= 其它辅助函数 =================
+
+/*
+    软件缓冲区 → [中断] → THR → TSR → 串口线
+        ↑                    ↑      ↑
+    第一阶段检查          THRE   TEMT (第二阶段检查)
+*/
+void
+dw_uart_flush(void)
+{
+    if (!dw_uart_initialized)
+        return;
+    
+    // 第一阶段：等待软件缓冲区为空
+    for (int timeout = 100000; timeout > 0; timeout--) {
+        spin_lock_irqsave(&tx_buffer.lock);
+        bool empty = buffer_is_empty(&tx_buffer);
+        spin_unlock_irqrestore(&tx_buffer.lock);
+        
+        if (empty)
+            break;
+            
+        for (int i = 0; i < 10; i++)
+            asm volatile("nop");
+    }
+    
+    // 第二阶段：等待硬件发送完成（THR 和 TSR 都为空）
+    // TEMT (Transmitter Empty) 位表示发送器完全空闲
+    for (int timeout = 10000; timeout > 0; timeout--) {
+        uint32_t lsr = read32((void *) DW_UART_LSR);
+        if (lsr & DW_UART_LSR_TEMT)
+            break;
+            
+        for (int i = 0; i < 10; i++)
+            asm volatile("nop");
+    }
+}
+
 bool
 dw_uart_rx_available(void)
 {
@@ -350,6 +432,8 @@ dw_uart_rx_available(void)
     spin_unlock_irqrestore(&rx_buffer.lock);
     return available;
 }
+
+// ================= Debug Functions =================
 
 uint32_t
 dw_uart_tx_buffer_usage(void)
@@ -365,9 +449,12 @@ dw_uart_tx_buffer_usage(void)
 void
 dw_uart_get_stats(uint32_t *tx_irqs, uint32_t *rx_irqs, uint32_t *tx_usage, uint32_t *rx_usage)
 {
-    if (tx_irqs) *tx_irqs = tx_irq_count;
-    if (rx_irqs) *rx_irqs = rx_irq_count;
-    if (tx_usage) *tx_usage = dw_uart_tx_buffer_usage();
+    if (tx_irqs)
+        *tx_irqs = tx_irq_count;
+    if (rx_irqs)
+        *rx_irqs = rx_irq_count;
+    if (tx_usage)
+        *tx_usage = dw_uart_tx_buffer_usage();
     if (rx_usage) {
         spin_lock_irqsave(&rx_buffer.lock);
         *rx_usage = rx_buffer.count;
