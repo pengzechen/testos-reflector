@@ -5,6 +5,10 @@ obj/
 out/
 *.uimg
 
+# User test binaries
+usertest/hello
+usertest/*.o
+
 # Compiled object files
 *.o
 *.obj

@@ -15,6 +15,8 @@
 #include "lib/t_logger.h"
 #include "lib/rand.h"
 #include "npu/rkmem.h"
+#include "lib/usermode.h"
+#include "lib/elf.h"
 
 #include "t_psci.h"
 #include "cfg/t_cfg.h"
@@ -272,6 +274,7 @@ t_kernel_main(uint64_t id)
                 logger_info("  p/P - Toggle periodic print\n");
                 logger_info("  x/X - Start XMODEM file receive\n");
                 logger_info("  d/D - Dump received file data\n");
+                logger_info("  e/E - Execute received ELF as user program\n");
                 logger_info("  q/Q - Quit (return to WFI loop)\n");
                 logger_info("==========================\n\n");
             } else if (c == 'd' || c == 'D') {
@@ -461,6 +464,34 @@ t_kernel_main(uint64_t id)
                            uptime_ms / 1000, uptime_ms % 1000);
                 logger_info("  Ticks: %llu\n", timer_get_system_ticks());
                 logger_info("====================\n\n");
+            } else if (c == 'e' || c == 'E') {
+                // Execute received ELF as user program
+                if (g_xmodem_buf == NULL) {
+                    logger_warn("No file received yet. Use 'x' to receive a file first.\n");
+                } else if (g_last_received <= 0) {
+                    logger_warn("No valid file data. Received size: %ld\n", g_last_received);
+                } else {
+                    logger_info("\n=== Executing User Program ===\n");
+                    logger_info("Buffer: %p, Size: %ld bytes\n", g_xmodem_buf, g_last_received);
+                    
+                    // Validate ELF
+                    if (elf_validate(g_xmodem_buf) != 0) {
+                        logger_error("Invalid ELF file\n");
+                    } else {
+                        logger_info("ELF validation passed. Loading and executing...\n");
+                        
+                        // Execute the program (this should not return unless there's an error)
+                        int result = exec_user_program(g_xmodem_buf);
+                        
+                        if (result != 0) {
+                            logger_error("Failed to execute user program (error: %d)\n", result);
+                        } else {
+                            // Should not reach here - user program should call exit()
+                            logger_warn("User program returned unexpectedly\n");
+                        }
+                    }
+                    logger_info("===============================\n\n");
+                }
             } else if (c == 'q' || c == 'Q') {
                 logger_info("Exiting UART test, entering WFI loop...\n");
                 break;
