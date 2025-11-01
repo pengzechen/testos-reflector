@@ -3,6 +3,7 @@
 
 #include "dev/t_gicv3.h"
 #include "dev/t_timer.h"
+#include "dev/t_dw_uart.h"
 
 #include "t_sysreg.h"
 
@@ -107,6 +108,9 @@ t_kernel_main(uint64_t id)
     timer_enable();
     // 使能中断
     enable_interrupts();
+    
+    // 初始化 DW UART
+    dw_uart_init();
     
     logger_info("System initialization completed\n");
     logger_info("Entering idle loop\n");
