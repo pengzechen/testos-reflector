@@ -1,6 +1,6 @@
 #include "lib/process.h"
 #include "lib/t_logger.h"
-#include "npu/rkmem.h"
+#include "lib/rkmem.h"
 #include "lib/t_string.h"
 #include "lib/syscall.h"
 

@@ -2,7 +2,7 @@
 #include "lib/elf.h"
 #include "lib/process.h"
 #include "lib/t_logger.h"
-#include "npu/rkmem.h"
+#include "lib/rkmem.h"
 #include "lib/t_string.h"
 
 #define USER_STACK_SIZE (1024 * 1024)  /* 1MB stack */

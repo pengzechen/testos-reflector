@@ -3,7 +3,7 @@
 #include "lib/t_string.h"
 #include "dev/t_dw_uart.h"
 #include "dev/t_timer.h"
-#include "npu/rkmem.h"
+#include "lib/rkmem.h"
 #include "t_exception.h"
 
 /* Current program break */

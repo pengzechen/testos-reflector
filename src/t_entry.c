@@ -5,16 +5,12 @@
 #include "dev/t_dw_uart.h"
 #include "dev/t_timer.h"
 #include "dev/xmodem_dw_uart.h"
-#include "npu/rknpu.h"
-#include "dev/cru.h"
-#include "dev/scmi.h"
 
 #include "t_sysreg.h"
 
 
 #include "lib/t_logger.h"
-#include "lib/rand.h"
-#include "npu/rkmem.h"
+#include "lib/rkmem.h"
 #include "lib/usermode.h"
 #include "lib/elf.h"
 
@@ -193,45 +189,9 @@ t_kernel_main(uint64_t id)
     logger_info("After enabling interrupts\n");
     dw_uart_init();
 
-    t_run_printf_tests();
-
-
-    // 随机数模块测试
-    srand_tick();
-
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-
-    // 申请内存测试
+    // 初始化内存分配器
     size_t heap_size = (1 << 28);  // 1 G
     rkmem_init(heap_size);
-
-    void *mem1 = rkmem_alloc(256 * 1024);  // 256 KB
-    void *mem2 = rkmem_alloc(512 * 1024);  // 512 KB
-
-    logger_info("Memory allocation test:\n");
-    logger_info("  Allocated 256 KB at %p\n", mem1);
-    logger_info("  Allocated 512 KB at %p\n", mem2);
-
-#if 0
-    {
-    // scmi 时钟
-    // todo fix.
-    // enable_scmi_clock(6);
-
-    // cru 时钟
-    // enable_rk3588_npu_clocks();
-
-    // RKNPU 初始化测试
-    rknpu_init();
-
-    // 测试
-    rknpu_test();
-
-    }
-#endif
 
     logger_info("========================================\n");
     logger_info("UART Interrupt Test Started\n");

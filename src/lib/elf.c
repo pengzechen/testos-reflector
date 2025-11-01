@@ -1,7 +1,7 @@
 #include "lib/elf.h"
 #include "lib/t_logger.h"
 #include "lib/t_string.h"
-#include "npu/rkmem.h"
+#include "lib/rkmem.h"
 
 /**
  * Validate ELF header

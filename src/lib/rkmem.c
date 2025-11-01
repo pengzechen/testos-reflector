@@ -1,6 +1,6 @@
 
 
-#include "rkmem.h"
+#include "lib/rkmem.h"
 
 static uint8_t *heap_start = NULL;
 static uint8_t *heap_end = NULL;
