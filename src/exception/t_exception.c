@@ -5,6 +5,7 @@
 #include "cfg/t_cfg.h"
 #include "dev/t_timer.h"
 #include "lib/t_logger.h"
+#include "lib/syscall.h"
 
 irq_handler_t g_handler_vec[512] = {0};
 
@@ -37,8 +38,21 @@ handle_sync_exception(uint64_t *stack_pointer)
 
     int ec = ((el1_esr >> 26) & 0b111111);
 
-    logger("el1 esr: %x\n", el1_esr);
-    logger("ec: %x\n", ec);
+    /* Exception Class values:
+     * 0x15 = SVC from AArch64 (EL0)
+     * 0x16 = HVC from AArch64 (EL1)
+     * 0x17 = SMC from AArch64
+     * 0x20-0x25 = Instruction/Data Abort from lower EL
+     */
+
+    /* Handle SVC (syscall) from EL0 */
+    if (ec == 0x15) {
+        handle_syscall_exception(stack_pointer);
+        return;
+    }
+
+    /* Handle other synchronous exceptions */
+    logger("Synchronous exception: esr=%x ec=%x\n", el1_esr, ec);
     logger("far_el1: %x\n", read_far_el1());
 
     logger("This is handle_sync_exception: \n");

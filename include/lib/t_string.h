@@ -38,6 +38,13 @@ memmove(void *dest, const void *src, size_t n);
 extern void *
 memchr(const void *s, int c, size_t n);
 
+/* Wrapper macros for internal use */
+#define my_memset memset
+#define my_memcpy memcpy
+#define my_strncpy strncpy
+#define my_strlen strlen
+#define my_strcmp strcmp
+
 long
 atol(const char *ptr);
 
