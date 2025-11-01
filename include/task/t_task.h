@@ -3,6 +3,7 @@
 
 #include "t_types.h"
 #include "t_exception.h"
+#include "cfg/t_cfg.h"
 
 // 任务状态
 typedef enum {
@@ -23,6 +24,7 @@ typedef struct task_struct {
     uint64_t task_id;                    // 任务 ID
     char name[32];                       // 任务名称
     task_state_t state;                  // 任务状态
+    uint64_t cpu_id;                     // 运行在哪个 CPU 上（用于多核调度）
     
     // 上下文信息
     trap_frame_t context;                // 寄存器上下文
@@ -58,14 +60,23 @@ void task_destroy(task_t *task);
 void schedule(void);
 void schedule_on_irq(uint64_t *stack_pointer);
 
+// 主动让出CPU
+void task_yield(void);
+
 // 获取当前任务
 task_t* get_current_task(void);
+
+// 获取当前 CPU ID
+uint64_t get_current_cpu_id(void);
 
 // 任务切换 (汇编实现)
 extern void task_switch(trap_frame_t *prev_ctx, trap_frame_t *next_ctx);
 
 // 启动调度器
 void scheduler_start(void);
+
+// 调度器状态
+extern volatile bool scheduler_started;
 
 // 统计信息
 void sched_get_stats(sched_stats_t *stats);

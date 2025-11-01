@@ -1,6 +1,7 @@
 #include "task/t_task.h"
 #include "lib/t_logger.h"
 #include "lib/t_string.h"
+#include "lib/t_spinlock.h"
 #include "t_sysreg.h"
 #include "mem/cache.h"
 
@@ -12,19 +13,40 @@ static uint8_t task_stacks[MAX_TASKS][TASK_STACK_SIZE] __attribute__((aligned(16
 static task_t *ready_queue_head = NULL;
 static task_t *ready_queue_tail = NULL;
 
-// 当前运行任务
-static task_t *current_task = NULL;
+// 就绪队列锁（保护并发访问）
+static spinlock_irq_t ready_queue_lock = SPINLOCK_IRQ_INIT;
+
+// 每个 CPU 的当前运行任务
+static task_t *current_tasks[T_SMP_NUM] = {NULL};
 
 // 下一个任务 ID
 static uint64_t next_task_id = 0;
 
-// 调度器统计
-static sched_stats_t sched_stats = {0};
+// 调度器统计（每个 CPU 一份）
+static sched_stats_t sched_stats[T_SMP_NUM] = {0};
 
 // 调度器是否启动
-static bool scheduler_started = false;
+static volatile bool scheduler_started = false;
 
-// 从就绪队列中移除任务
+// 获取当前 CPU ID
+uint64_t get_current_cpu_id(void)
+{
+    uint64_t mpidr;
+    asm volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+    return mpidr & 0xFF;
+}
+
+// 获取当前任务
+task_t* get_current_task(void)
+{
+    uint64_t cpu_id = get_current_cpu_id();
+    if (cpu_id >= T_SMP_NUM) {
+        return NULL;
+    }
+    return current_tasks[cpu_id];
+}
+
+// 从就绪队列中移除任务（需要持有锁）
 static void remove_from_ready_queue(task_t *task)
 {
     if (task == NULL || task->state != TASK_READY) {
@@ -47,7 +69,7 @@ static void remove_from_ready_queue(task_t *task)
     task->prev = NULL;
 }
 
-// 添加任务到就绪队列尾部
+// 添加任务到就绪队列尾部（需要持有锁）
 static void add_to_ready_queue(task_t *task)
 {
     if (task == NULL) {
@@ -67,7 +89,7 @@ static void add_to_ready_queue(task_t *task)
     ready_queue_tail = task;
 }
 
-// 选择下一个任务 (Round-Robin)
+// 选择下一个任务 (Round-Robin)（需要持有锁）
 static task_t* pick_next_task(void)
 {
     if (ready_queue_head == NULL) {
@@ -90,21 +112,25 @@ void task_init(void)
     for (int i = 0; i < MAX_TASKS; i++) {
         task_pool[i].state = TASK_DEAD;
         task_pool[i].task_id = 0;
+        task_pool[i].cpu_id = 0;
         task_pool[i].next = NULL;
         task_pool[i].prev = NULL;
     }
     
     ready_queue_head = NULL;
     ready_queue_tail = NULL;
-    current_task = NULL;
+    spinlock_irq_init(&ready_queue_lock);
+    
+    for (int i = 0; i < T_SMP_NUM; i++) {
+        current_tasks[i] = NULL;
+        sched_stats[i].total_switches = 0;
+        sched_stats[i].total_schedules = 0;
+    }
+    
     next_task_id = 1;
-    
-    sched_stats.total_switches = 0;
-    sched_stats.total_schedules = 0;
-    
     scheduler_started = false;
     
-    logger_info("Task subsystem initialized\n");
+    logger_info("Task subsystem initialized (multi-core support: %d CPUs)\n", T_SMP_NUM);
 }
 
 // 分配一个空闲的 TCB
@@ -121,7 +147,7 @@ static task_t* alloc_task(void)
 // 任务入口包装函数
 static void task_entry_wrapper(void)
 {
-    task_t *task = current_task;
+    task_t *task = get_current_task();
     
     if (task == NULL) {
         logger_error("task_entry_wrapper: current_task is NULL\n");
@@ -138,7 +164,8 @@ static void task_entry_wrapper(void)
     }
     
     // 任务结束，标记为死亡状态
-    logger_info("Task %s (ID %llu) finished\n", task->name, task->task_id);
+    logger_info("Task %s (ID %llu) on CPU %llu finished\n", 
+               task->name, task->task_id, task->cpu_id);
     task->state = TASK_DEAD;
     
     // 触发调度
@@ -151,8 +178,11 @@ static void task_entry_wrapper(void)
 // 创建任务
 task_t* task_create(const char *name, void (*entry)(void*), void *arg)
 {
+    spin_lock_irqsave(&ready_queue_lock);
+    
     task_t *task = alloc_task();
     if (task == NULL) {
+        spin_unlock_irqrestore(&ready_queue_lock);
         logger_error("Failed to allocate task\n");
         return NULL;
     }
@@ -163,6 +193,7 @@ task_t* task_create(const char *name, void (*entry)(void*), void *arg)
     task->name[sizeof(task->name) - 1] = '\0';
     
     task->state = TASK_READY;
+    task->cpu_id = 0;  // 初始不绑定到特定 CPU
     task->time_slice = 10;  // 10 个 timer tick
     task->runtime = 0;
     
@@ -193,6 +224,8 @@ task_t* task_create(const char *name, void (*entry)(void*), void *arg)
     // 添加到就绪队列
     add_to_ready_queue(task);
     
+    spin_unlock_irqrestore(&ready_queue_lock);
+    
     logger_info("Created task: %s (ID %llu)\n", task->name, task->task_id);
     
     return task;
@@ -207,6 +240,8 @@ void task_destroy(task_t *task)
     
     logger_info("Destroying task: %s (ID %llu)\n", task->name, task->task_id);
     
+    spin_lock_irqsave(&ready_queue_lock);
+    
     // 从就绪队列移除
     if (task->state == TASK_READY) {
         remove_from_ready_queue(task);
@@ -214,12 +249,8 @@ void task_destroy(task_t *task)
     
     // 标记为死亡
     task->state = TASK_DEAD;
-}
-
-// 获取当前任务
-task_t* get_current_task(void)
-{
-    return current_task;
+    
+    spin_unlock_irqrestore(&ready_queue_lock);
 }
 
 // 调度函数 (从中断上下文调用)
@@ -229,11 +260,19 @@ void schedule_on_irq(uint64_t *stack_pointer)
         return;
     }
     
+    uint64_t cpu_id = get_current_cpu_id();
+    if (cpu_id >= T_SMP_NUM) {
+        return;
+    }
+    
     trap_frame_t *frame = (trap_frame_t*)stack_pointer;
     
-    sched_stats.total_schedules++;
+    sched_stats[cpu_id].total_schedules++;
     
-    task_t *prev_task = current_task;
+    task_t *prev_task = current_tasks[cpu_id];
+    
+    // 获取就绪队列锁
+    spin_lock_irqsave(&ready_queue_lock);
     
     // 如果当前任务还在运行，保存上下文并放回就绪队列
     if (prev_task && prev_task->state == TASK_RUNNING) {
@@ -245,31 +284,40 @@ void schedule_on_irq(uint64_t *stack_pointer)
     task_t *next_task = pick_next_task();
     
     if (next_task == NULL) {
+        spin_unlock_irqrestore(&ready_queue_lock);
         // 没有就绪任务，继续运行当前任务或进入 idle
         if (prev_task && prev_task->state != TASK_DEAD) {
             next_task = prev_task;
+            next_task->state = TASK_RUNNING;
         } else {
             // 系统空闲，回到 WFI
+            current_tasks[cpu_id] = NULL;
             return;
         }
+    } else {
+        spin_unlock_irqrestore(&ready_queue_lock);
     }
     
     // 切换任务
     if (next_task != prev_task) {
-        sched_stats.total_switches++;
+        sched_stats[cpu_id].total_switches++;
         
-        current_task = next_task;
+        current_tasks[cpu_id] = next_task;
         next_task->state = TASK_RUNNING;
+        next_task->cpu_id = cpu_id;
         
         // 恢复下一个任务的上下文
         memcpy(frame, &next_task->context, sizeof(trap_frame_t));
         
-        logger_info("Task switch: %s -> %s\n", 
-                   prev_task ? prev_task->name : "none",
-                   next_task->name);
+        // logger_info("[CPU %llu] Task switch: %s -> %s\n", 
+        //            cpu_id,
+        //            prev_task ? prev_task->name : "none",
+        //            next_task->name);
     } else {
         // 继续运行当前任务
-        current_task->state = TASK_RUNNING;
+        if (next_task) {
+            next_task->state = TASK_RUNNING;
+        }
     }
 }
 
@@ -280,12 +328,20 @@ void schedule(void)
         return;
     }
     
+    uint64_t cpu_id = get_current_cpu_id();
+    if (cpu_id >= T_SMP_NUM) {
+        return;
+    }
+    
     // 禁用中断
     disable_interrupts();
     
-    sched_stats.total_schedules++;
+    sched_stats[cpu_id].total_schedules++;
     
-    task_t *prev_task = current_task;
+    task_t *prev_task = current_tasks[cpu_id];
+    
+    // 获取就绪队列锁
+    spin_lock_irqsave(&ready_queue_lock);
     
     // 如果当前任务还在运行，放回就绪队列
     if (prev_task && prev_task->state == TASK_RUNNING) {
@@ -295,6 +351,8 @@ void schedule(void)
     // 选择下一个任务
     task_t *next_task = pick_next_task();
     
+    spin_unlock_irqrestore(&ready_queue_lock);
+    
     if (next_task == NULL) {
         // 没有任务，进入 idle
         enable_interrupts();
@@ -303,15 +361,17 @@ void schedule(void)
     
     // 切换任务
     if (next_task != prev_task) {
-        sched_stats.total_switches++;
+        sched_stats[cpu_id].total_switches++;
         
-        task_t *old_task = current_task;
-        current_task = next_task;
+        task_t *old_task = current_tasks[cpu_id];
+        current_tasks[cpu_id] = next_task;
         next_task->state = TASK_RUNNING;
+        next_task->cpu_id = cpu_id;
         
-        logger_info("Task switch: %s -> %s\n", 
-                   old_task ? old_task->name : "none",
-                   next_task->name);
+        // logger_info("[CPU %llu] Task switch: %s -> %s\n", 
+        //            cpu_id,
+        //            old_task ? old_task->name : "none",
+        //            next_task->name);
         
         // 执行任务切换（保存/恢复上下文）
         if (old_task) {
@@ -321,18 +381,28 @@ void schedule(void)
             task_switch(NULL, &next_task->context);
         }
     } else {
-        current_task->state = TASK_RUNNING;
+        if (next_task) {
+            next_task->state = TASK_RUNNING;
+        }
     }
     
     // 使能中断
     enable_interrupts();
 }
 
+// 主动让出 CPU (yield)
+void task_yield(void)
+{
+    // 主动让出 CPU，触发调度
+    schedule();
+}
+
 // Idle 任务
 void idle_task_entry(void *arg)
 {
     (void)arg;
-    logger_info("Idle task started\n");
+    uint64_t cpu_id = get_current_cpu_id();
+    logger_info("Idle task started on CPU %llu\n", cpu_id);
     
     while (1) {
         WFI();
@@ -342,13 +412,20 @@ void idle_task_entry(void *arg)
 // 启动调度器
 void scheduler_start(void)
 {
-    logger_info("Starting scheduler...\n");
+    uint64_t cpu_id = get_current_cpu_id();
+    logger_info("[CPU %llu] Starting scheduler...\n", cpu_id);
     
-    // 创建 idle 任务
-    task_t *idle = task_create("idle", idle_task_entry, NULL);
-    if (idle == NULL) {
-        logger_error("Failed to create idle task\n");
-        return;
+    // 只在主核创建 idle 任务
+    if (cpu_id == 0) {
+        // 为每个 CPU 创建 idle 任务
+        for (int i = 0; i < T_SMP_NUM; i++) {
+            char idle_name[32];
+            my_snprintf(idle_name, sizeof(idle_name), "idle-%d", i);
+            task_t *idle = task_create(idle_name, idle_task_entry, NULL);
+            if (idle == NULL) {
+                logger_error("Failed to create idle task for CPU %d\n", i);
+            }
+        }
     }
     
     scheduler_started = true;
@@ -361,7 +438,10 @@ void scheduler_start(void)
 void sched_get_stats(sched_stats_t *stats)
 {
     if (stats) {
-        stats->total_switches = sched_stats.total_switches;
-        stats->total_schedules = sched_stats.total_schedules;
+        uint64_t cpu_id = get_current_cpu_id();
+        if (cpu_id < T_SMP_NUM) {
+            stats->total_switches = sched_stats[cpu_id].total_switches;
+            stats->total_schedules = sched_stats[cpu_id].total_schedules;
+        }
     }
 }

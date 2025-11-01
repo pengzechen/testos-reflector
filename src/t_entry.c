@@ -25,7 +25,7 @@ start_secondary_cpus();
 
 volatile int cpu_online[T_SMP_NUM];
 
-// 副核在汇编设置一些寄存器就会跳到这里，执行 WFI 进入低功耗状态
+// 副核在汇编设置一些寄存器就会跳到这里，现在也运行调度器
 void
 t_secondary_main(uint64_t cpu_id)
 {
@@ -33,7 +33,18 @@ t_secondary_main(uint64_t cpu_id)
     cpu_online[cpu_id] = 1;
     DSB_SY();
     
-    // 副核启动后进入 WFI 等待中断
+    // 等待调度器启动
+    while (!scheduler_started) {
+        asm volatile("nop");
+    }
+    
+    logger_info("secondary core %d starting scheduler\n", cpu_id);
+    
+    // 副核也运行调度器
+    scheduler_start();
+    
+    // 不应该到达这里
+    logger_error("secondary core %d scheduler returned\n", cpu_id);
     while (1) {
         WFI();
     }
@@ -47,8 +58,8 @@ void test_task1(void *arg)
     
     for (int i = 0; i < 5; i++) {
         logger_info("Task 1: iteration %d\n", i);
-        // 主动让出 CPU（通过延时模拟工作）
-        for (volatile int j = 0; j < 1000000; j++);
+        // 主动让出 CPU，演示 yield 功能
+        task_yield();
     }
     
     logger_info("Task 1 finished\n");
@@ -62,8 +73,8 @@ void test_task2(void *arg)
     
     for (int i = 0; i < 5; i++) {
         logger_info("Task 2: iteration %d\n", i);
-        // 主动让出 CPU（通过延时模拟工作）
-        for (volatile int j = 0; j < 1000000; j++);
+        // 主动让出 CPU，演示 yield 功能
+        task_yield();
     }
     
     logger_info("Task 2 finished\n");
@@ -77,8 +88,8 @@ void test_task3(void *arg)
     
     for (int i = 0; i < 5; i++) {
         logger_info("Task 3: iteration %d\n", i);
-        // 主动让出 CPU（通过延时模拟工作）
-        for (volatile int j = 0; j < 1000000; j++);
+        // 主动让出 CPU，演示 yield 功能
+        task_yield();
     }
     
     logger_info("Task 3 finished\n");
