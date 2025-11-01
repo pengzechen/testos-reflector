@@ -5,16 +5,14 @@
 #include "dev/t_dw_uart.h"
 #include "dev/t_timer.h"
 #include "dev/xmodem_dw_uart.h"
-#include "npu/rknpu.h"
-#include "dev/cru.h"
-#include "dev/scmi.h"
 
 #include "t_sysreg.h"
 
 
 #include "lib/t_logger.h"
-#include "lib/rand.h"
-#include "npu/rkmem.h"
+#include "lib/rkmem.h"
+#include "lib/usermode.h"
+#include "lib/elf.h"
 
 #include "t_psci.h"
 #include "cfg/t_cfg.h"
@@ -191,45 +189,9 @@ t_kernel_main(uint64_t id)
     logger_info("After enabling interrupts\n");
     dw_uart_init();
 
-    t_run_printf_tests();
-
-
-    // 随机数模块测试
-    srand_tick();
-
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-
-    // 申请内存测试
+    // 初始化内存分配器
     size_t heap_size = (1 << 28);  // 1 G
     rkmem_init(heap_size);
-
-    void *mem1 = rkmem_alloc(256 * 1024);  // 256 KB
-    void *mem2 = rkmem_alloc(512 * 1024);  // 512 KB
-
-    logger_info("Memory allocation test:\n");
-    logger_info("  Allocated 256 KB at %p\n", mem1);
-    logger_info("  Allocated 512 KB at %p\n", mem2);
-
-#if 0
-    {
-    // scmi 时钟
-    // todo fix.
-    // enable_scmi_clock(6);
-
-    // cru 时钟
-    // enable_rk3588_npu_clocks();
-
-    // RKNPU 初始化测试
-    rknpu_init();
-
-    // 测试
-    rknpu_test();
-
-    }
-#endif
 
     logger_info("========================================\n");
     logger_info("UART Interrupt Test Started\n");
@@ -272,6 +234,7 @@ t_kernel_main(uint64_t id)
                 logger_info("  p/P - Toggle periodic print\n");
                 logger_info("  x/X - Start XMODEM file receive\n");
                 logger_info("  d/D - Dump received file data\n");
+                logger_info("  e/E - Execute received ELF as user program\n");
                 logger_info("  q/Q - Quit (return to WFI loop)\n");
                 logger_info("==========================\n\n");
             } else if (c == 'd' || c == 'D') {
@@ -461,6 +424,34 @@ t_kernel_main(uint64_t id)
                            uptime_ms / 1000, uptime_ms % 1000);
                 logger_info("  Ticks: %llu\n", timer_get_system_ticks());
                 logger_info("====================\n\n");
+            } else if (c == 'e' || c == 'E') {
+                // Execute received ELF as user program
+                if (g_xmodem_buf == NULL) {
+                    logger_warn("No file received yet. Use 'x' to receive a file first.\n");
+                } else if (g_last_received <= 0) {
+                    logger_warn("No valid file data. Received size: %ld\n", g_last_received);
+                } else {
+                    logger_info("\n=== Executing User Program ===\n");
+                    logger_info("Buffer: %p, Size: %ld bytes\n", g_xmodem_buf, g_last_received);
+                    
+                    // Validate ELF
+                    if (elf_validate(g_xmodem_buf) != 0) {
+                        logger_error("Invalid ELF file\n");
+                    } else {
+                        logger_info("ELF validation passed. Loading and executing...\n");
+                        
+                        // Execute the program (this should not return unless there's an error)
+                        int result = exec_user_program(g_xmodem_buf);
+                        
+                        if (result != 0) {
+                            logger_error("Failed to execute user program (error: %d)\n", result);
+                        } else {
+                            // Should not reach here - user program should call exit()
+                            logger_warn("User program returned unexpectedly\n");
+                        }
+                    }
+                    logger_info("===============================\n\n");
+                }
             } else if (c == 'q' || c == 'Q') {
                 logger_info("Exiting UART test, entering WFI loop...\n");
                 break;
