@@ -5,6 +5,7 @@
 
 #include "t_exception.h"
 #include "lib/rand.h"
+#include "task/t_task.h"
 
 // 调度标志位（在exception模块中定义）
 extern volatile int need_schedule_flag;
@@ -91,10 +92,6 @@ timer_schedule_next_tick(void)
 void
 timer_handler(uint64_t *stack_pointer)
 {
-    (void) stack_pointer;  // Suppress unused parameter warning
-
-    // logger_info("Timer interrupt handler invoked\n");
-
     // 更新系统tick计数
     g_system_ticks++;
 
@@ -105,28 +102,11 @@ timer_handler(uint64_t *stack_pointer)
     // 调度下一个tick
     timer_schedule_next_tick();
 
-    // 设置调度标志位，延迟到中断处理完成后再调度
-    // 这样可以确保GIC的EOIR和DIR已经写入，避免中断丢失
+    // 设置调度标志位，表示需要进行任务调度
     need_schedule_flag = 1;
 
     // 更新调度统计
     g_timer_stats.total_schedules++;
-
-    // 每30秒打印一次信息
-    // ❌ 不要在中断中打印！会导致TX buffer一直有数据
-    // if (g_system_ticks % (TIMER_FREQUENCY_HZ * 30) == 0) {
-    //     logger_info("Timer: %llu seconds, %llu ticks, %llu interrupts\n",
-    //                 g_system_ticks / TIMER_FREQUENCY_HZ,
-    //                 g_system_ticks,
-    //                 g_timer_stats.total_interrupts);
-    // }
-
-    // 前几个中断打印调试信息
-    if (g_system_ticks <= 10) {
-        // logger_info("Timer interrupt #%llu: uptime=%llu ms\n",
-        //             g_system_ticks,
-        //             timer_get_uptime_ms());
-    }
 }
 
 // 获取系统tick数
