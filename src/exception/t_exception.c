@@ -5,6 +5,7 @@
 #include "cfg/t_cfg.h"
 #include "dev/t_timer.h"
 #include "lib/t_logger.h"
+#include "task/t_task.h"
 
 irq_handler_t g_handler_vec[512] = {0};
 
@@ -83,6 +84,8 @@ handle_irq_exception(uint64_t *stack_pointer)
     // 检查是否需要调度
     if (need_schedule_flag) {
         need_schedule_flag = 0;
+        // 执行任务调度
+        schedule_on_irq(stack_pointer);
     }
 }
 

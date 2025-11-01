@@ -11,6 +11,7 @@
 
 #include "cfg/t_cfg.h"
 #include "mem/cache.h"
+#include "task/t_task.h"
 
 extern void
 __bss_start();
@@ -38,6 +39,50 @@ t_secondary_main(uint64_t cpu_id)
     }
 }
 
+// 测试任务 1
+void test_task1(void *arg)
+{
+    (void)arg;
+    logger_info("Task 1 started\n");
+    
+    for (int i = 0; i < 5; i++) {
+        logger_info("Task 1: iteration %d\n", i);
+        // 主动让出 CPU（通过延时模拟工作）
+        for (volatile int j = 0; j < 1000000; j++);
+    }
+    
+    logger_info("Task 1 finished\n");
+}
+
+// 测试任务 2
+void test_task2(void *arg)
+{
+    (void)arg;
+    logger_info("Task 2 started\n");
+    
+    for (int i = 0; i < 5; i++) {
+        logger_info("Task 2: iteration %d\n", i);
+        // 主动让出 CPU（通过延时模拟工作）
+        for (volatile int j = 0; j < 1000000; j++);
+    }
+    
+    logger_info("Task 2 finished\n");
+}
+
+// 测试任务 3
+void test_task3(void *arg)
+{
+    (void)arg;
+    logger_info("Task 3 started\n");
+    
+    for (int i = 0; i < 5; i++) {
+        logger_info("Task 3: iteration %d\n", i);
+        // 主动让出 CPU（通过延时模拟工作）
+        for (volatile int j = 0; j < 1000000; j++);
+    }
+    
+    logger_info("Task 3 finished\n");
+}
 
 
 // 主内核入口函数
@@ -112,10 +157,24 @@ t_kernel_main(uint64_t id)
     // 初始化 DW UART
     dw_uart_init();
     
-    logger_info("System initialization completed\n");
-    logger_info("Entering idle loop\n");
+    // 初始化任务子系统
+    task_init();
     
-    // 主核进入 WFI 循环
+    logger_info("System initialization completed\n");
+    logger_info("Creating test tasks...\n");
+    
+    // 创建测试任务
+    task_create("task1", test_task1, NULL);
+    task_create("task2", test_task2, NULL);
+    task_create("task3", test_task3, NULL);
+    
+    logger_info("Starting scheduler...\n");
+    
+    // 启动调度器（不会返回）
+    scheduler_start();
+    
+    // 不应该到达这里
+    logger_error("Scheduler returned unexpectedly\n");
     while (1) {
         WFI();
     }
