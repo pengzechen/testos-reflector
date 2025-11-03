@@ -14,7 +14,7 @@
 
 #include "lib/t_logger.h"
 #include "lib/rand.h"
-#include "npu/rkmem.h"
+#include "mem/t_mem.h"
 
 #include "t_psci.h"
 #include "cfg/t_cfg.h"
@@ -112,130 +112,14 @@ t_secondary_main(uint64_t cpu_id)
     }
 }
 
-
-// ============================== 首核 ============================
-
 // XMODEM 接收缓冲区（全局变量，用于在命令间共享）
 #define XMODEM_BUF_SIZE (2 * 1024 * 1024)  // 2MB 缓冲区
 static uint8_t *g_xmodem_buf    = NULL;
 static ssize_t  g_last_received = 0;
 
-// 主内核入口函数
 void
-t_kernel_main(uint64_t id)
+uart_test()
 {
-    // ========== 阶段 1: 早期初始化（无中断） ==========
-    // 先初始化早期串口，这样后续的 logger_info 就能工作
-    // dw_uart_early_init();
-
-    logger_info("Compiled on %s at %s\n", __DATE__, __TIME__);
-
-    logger_info("bss start: %p, end: %p, size: %u KB\n",
-                &__bss_start,
-                &__bss_end,
-                ((uint64_t) &__bss_end - (uint64_t) &__bss_start) / 1024);
-
-    logger_info("heap flag address: %p\n", &__heap_flag);
-
-    logger_warn("CurrentEL = %u\n", READ_CURRENTEL());
-
-    logger_info("smp: %d\n", T_SMP_NUM);
-
-    logger_info("main core id: %d\n", id);
-
-    init_cpu_cacheline_size();
-
-    gicv3_init();
-
-
-    timer_init();
-    // timer_dump_info();
-
-    // 启动多核
-    start_secondary_cpus();
-
-    {
-        // 最多等待 5 秒让所有副核就绪；全部就绪则提前结束等待
-        uint64_t freq        = timer_get_frequency();
-        uint64_t start_ticks = CNTPCT_EL0_READ();
-        uint64_t deadline    = start_ticks + 5ULL * freq;  // 5 秒超时
-
-        int all_online = 0;
-        while (CNTPCT_EL0_READ() < deadline) {
-            all_online = 1;
-            for (int i = 1; i < T_SMP_NUM; i++) {
-                if (cpu_online[i] == 0) {
-                    all_online = 0;
-                    break;
-                }
-            }
-            if (all_online)
-                break;
-            // 小幅让步，避免过度占用总线
-            asm volatile("nop");
-        }
-
-        if (all_online) {
-            logger_info("All %d secondary cores online within 5 seconds.\n", T_SMP_NUM - 1);
-        } else {
-            logger_warn("Timeout after 5 seconds: some secondary cores are not online.\n");
-            for (int i = 1; i < T_SMP_NUM; i++) {
-                if (cpu_online[i] == 0) {
-                    logger_warn("  - core %d NOT online\n", i);
-                }
-            }
-        }
-    }
-
-
-    // 启用定时器
-    timer_enable();
-    enable_interrupts();  // daifclr 2
-    logger_info("After enabling interrupts\n");
-
-    dw_uart_init();
-
-
-    t_run_printf_tests();
-
-
-    // 随机数模块测试
-    srand_tick();
-
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-    logger_info("Random number test: %ld\n", rand_tick());
-
-    // 申请内存测试
-    size_t heap_size = (1 << 28);  // 1 G
-    rkmem_init(heap_size);
-
-    void *mem1 = rkmem_alloc(256 * 1024);  // 256 KB
-    void *mem2 = rkmem_alloc(512 * 1024);  // 512 KB
-
-    logger_info("Memory allocation test:\n");
-    logger_info("  Allocated 256 KB at %p\n", mem1);
-    logger_info("  Allocated 512 KB at %p\n", mem2);
-
-#if 0
-    {
-    // scmi 时钟
-    // todo fix.
-    // enable_scmi_clock(6);
-
-    // cru 时钟
-    // enable_rk3588_npu_clocks();
-
-    // RKNPU 初始化测试
-    rknpu_init();
-
-    // 测试
-    rknpu_test();
-
-    }
-#endif
-
     logger_info("========================================\n");
     logger_info("UART Interrupt Test Started\n");
     logger_info("Press any key for echo test...\n");
@@ -392,7 +276,7 @@ t_kernel_main(uint64_t id)
         } else if (c == 'x' || c == 'X') {
             // XMODEM 文件接收测试
             if (g_xmodem_buf == NULL) {
-                g_xmodem_buf = (uint8_t *) rkmem_alloc(XMODEM_BUF_SIZE);
+                g_xmodem_buf = (uint8_t *) t_mem_alloc(XMODEM_BUF_SIZE);
                 if (g_xmodem_buf == NULL) {
                     logger_error("Failed to allocate XMODEM buffer\n");
                 } else {
@@ -470,6 +354,128 @@ t_kernel_main(uint64_t id)
     }
 
     logger_info("UART test completed, entering idle loop\n");
+}
+
+// ============================== 首核 ============================
+
+
+
+// 主内核入口函数
+void
+t_kernel_main(uint64_t id)
+{
+    // ========== 阶段 1: 早期初始化（无中断） ==========
+    // 先初始化早期串口，这样后续的 logger_info 就能工作
+    // dw_uart_early_init();
+
+    logger_info("Compiled on %s at %s\n", __DATE__, __TIME__);
+
+    logger_info("bss start: %p, end: %p, size: %u KB\n",
+                &__bss_start,
+                &__bss_end,
+                ((uint64_t) &__bss_end - (uint64_t) &__bss_start) / 1024);
+
+    logger_info("heap flag address: %p\n", &__heap_flag);
+
+    logger_warn("CurrentEL = %u\n", READ_CURRENTEL());
+
+    logger_info("smp: %d\n", T_SMP_NUM);
+
+    logger_info("main core id: %d\n", id);
+
+    init_cpu_cacheline_size();
+
+    gicv3_init();
+
+
+    timer_init();
+    // timer_dump_info();
+
+    // 启动多核
+    start_secondary_cpus();
+
+    {
+        // 最多等待 5 秒让所有副核就绪；全部就绪则提前结束等待
+        uint64_t freq        = timer_get_frequency();
+        uint64_t start_ticks = CNTPCT_EL0_READ();
+        uint64_t deadline    = start_ticks + 5ULL * freq;  // 5 秒超时
+
+        int all_online = 0;
+        while (CNTPCT_EL0_READ() < deadline) {
+            all_online = 1;
+            for (int i = 1; i < T_SMP_NUM; i++) {
+                if (cpu_online[i] == 0) {
+                    all_online = 0;
+                    break;
+                }
+            }
+            if (all_online)
+                break;
+            // 小幅让步，避免过度占用总线
+            asm volatile("nop");
+        }
+
+        if (all_online) {
+            logger_info("All %d secondary cores online within 5 seconds.\n", T_SMP_NUM - 1);
+        } else {
+            logger_warn("Timeout after 5 seconds: some secondary cores are not online.\n");
+            for (int i = 1; i < T_SMP_NUM; i++) {
+                if (cpu_online[i] == 0) {
+                    logger_warn("  - core %d NOT online\n", i);
+                }
+            }
+        }
+    }
+
+
+    // 启用定时器
+    timer_enable();
+    enable_interrupts();  // daifclr 2
+    logger_info("After enabling interrupts\n");
+
+    dw_uart_init();
+
+
+    t_run_printf_tests();
+
+
+    // 随机数模块测试
+    srand_tick();
+
+    logger_info("Random number test: %ld\n", rand_tick());
+    logger_info("Random number test: %ld\n", rand_tick());
+    logger_info("Random number test: %ld\n", rand_tick());
+    logger_info("Random number test: %ld\n", rand_tick());
+
+    // 申请内存测试
+    size_t heap_size = (1 << 28);  // 1 G
+    t_mem_init(heap_size);
+
+#if 1
+    void t_mem_run_tests(void);
+    void t_mem_run_stress_tests(void);
+    t_mem_run_tests();
+    t_mem_run_stress_tests();
+#endif
+
+#if 0
+    {
+    // scmi 时钟
+    // todo fix.
+    // enable_scmi_clock(6);
+
+    // cru 时钟
+    // enable_rk3588_npu_clocks();
+
+    // RKNPU 初始化测试
+    rknpu_init();
+
+    // 测试
+    rknpu_test();
+
+    }
+#endif
+
 
     while (1) {
         WFI();

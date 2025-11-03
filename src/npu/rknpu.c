@@ -91,7 +91,7 @@ rknpu_init(void)
     // 安装中断处理
     irq_install(NPU0_IRQ, job_done);
 
-    // gicv3_enable_int(NPU0_IRQ, true);
+    gicv3_enable_int(NPU0_IRQ, true);
 
     if (gicv3_is_int_enabled(NPU0_IRQ)) {
         logger_warn("NPU0 IRQ %d is enabled in GICv3\n", NPU0_IRQ);
@@ -259,7 +259,7 @@ job_wait_complete(uint32_t core, uint32_t task_number, uint32_t tmo)
     int l = 0;
     do {
         // 简单轮询中断状态寄存器
-        if (check_job_done_noirq()) {
+        if (check_job_done()) {
             logger_info("wait loop: %d\n", l);
             logger_info("RKNPU: Job completed successfully.\n");
             return;

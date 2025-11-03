@@ -2,7 +2,7 @@
 
 #include "npu/rkconfig.h"
 #include "npu/rknpu.h"
-#include "npu/rkmem.h"
+#include "mem/t_mem.h"
 #include "npulib/npu_matmul.h"
 
 #include "lib/t_logger.h"
@@ -143,11 +143,11 @@ rknpu_test(void)
     }
 
 
-    void       *regcmd  = rkmem_alloc(1024);  // 8 * 112 = 896 bytes
-    npu_task_t *tasks   = rkmem_alloc(1024);
-    void       *input   = (void *) rkmem_alloc(M * K * sizeof(int8_t));
-    void       *weights = (void *) rkmem_alloc(N * K * sizeof(int8_t));
-    void       *output  = (void *) rkmem_alloc(M * N * sizeof(int32_t));
+    void       *regcmd  = t_mem_alloc(1024);  // 8 * 112 = 896 bytes
+    npu_task_t *tasks   = t_mem_alloc(1024);
+    void       *input   = (void *) t_mem_alloc(M * K * sizeof(int8_t));
+    void       *weights = (void *) t_mem_alloc(N * K * sizeof(int8_t));
+    void       *output  = (void *) t_mem_alloc(M * N * sizeof(int32_t));
 
     uint32_t input_dma   = rknpu_get_dma_addr(input);
     uint32_t weights_dma = rknpu_get_dma_addr(weights);
@@ -225,8 +225,8 @@ rknpu_test(void)
 
     
     // --- 2. 第一次重排，生成按 NPU 内存布局的矩阵缓存 ---
-    int8_t *matrixB_int8_layout = rkmem_alloc(K * N);  // 按 NPU 内存布局
-    int8_t *matrixA_int8_layout = rkmem_alloc(M * K);
+    int8_t *matrixB_int8_layout = t_mem_alloc(K * N);  // 按 NPU 内存布局
+    int8_t *matrixA_int8_layout = t_mem_alloc(M * K);
 
     // --- 3. 可选：CPU 软件模拟，用于验证 ---
     logger_warn("current tick (cpu compute before): %d\n", timer_get_system_ticks());
