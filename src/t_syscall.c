@@ -17,8 +17,11 @@
  */
 static int64_t sys_write(int fd, const char *buf, size_t count)
 {
+    logger_info("[SYSCALL] sys_write: fd=%d, buf=%p, count=%zu\n", fd, buf, count);
+    
     // 简单实现：只支持 stdout 和 stderr，直接写到串口
     if (fd != STDOUT_FILENO && fd != STDERR_FILENO) {
+        logger_error("[SYSCALL] sys_write: invalid fd=%d\n", fd);
         return -9; // -EBADF (Bad file descriptor)
     }
 
@@ -27,6 +30,7 @@ static int64_t sys_write(int fd, const char *buf, size_t count)
         dw_uart_putchar(buf[i]);
     }
 
+    logger_info("[SYSCALL] sys_write: wrote %zu bytes\n", count);
     return (int64_t)count;
 }
 
@@ -35,6 +39,8 @@ static int64_t sys_write(int fd, const char *buf, size_t count)
  */
 static int64_t sys_writev(int fd, const void *iov, int iovcnt)
 {
+    logger_info("[SYSCALL] sys_writev: fd=%d, iov=%p, iovcnt=%d\n", fd, iov, iovcnt);
+    
     if (fd != STDOUT_FILENO && fd != STDERR_FILENO) {
         return -9; // -EBADF
     }
@@ -50,12 +56,23 @@ static int64_t sys_writev(int fd, const void *iov, int iovcnt)
         const char *buf = (const char *)iovec[i].iov_base;
         size_t len = iovec[i].iov_len;
         
+        logger_info("[SYSCALL]   iovec[%d]: base=%p, len=%zu\n", i, buf, len);
+        
+        // 检查地址有效性
+        uint64_t addr = (uint64_t)buf;
+        if (len > 0 && (addr < 0x400000 || addr > 0x90000000)) {
+            logger_error("[SYSCALL]   iovec[%d]: INVALID ADDRESS %p (len=%zu)\n", i, buf, len);
+            logger_error("[SYSCALL]   Skipping this buffer to avoid crash\n");
+            continue;  // 跳过无效地址
+        }
+        
         for (size_t j = 0; j < len; j++) {
             dw_uart_putchar(buf[j]);
         }
         total += len;
     }
 
+    logger_info("[SYSCALL] sys_writev: wrote %ld bytes total\n", total);
     return total;
 }
 
@@ -64,13 +81,14 @@ static int64_t sys_writev(int fd, const void *iov, int iovcnt)
  */
 static int64_t sys_ioctl(int fd, unsigned long request, unsigned long arg)
 {
+    logger_info("[SYSCALL] sys_ioctl: fd=%d, request=0x%lx, arg=0x%lx\n", fd, request, arg);
+    
     (void)fd;
     (void)request;
     (void)arg;
     
     // 简化实现：大多数 ioctl 调用可以安全地返回成功
     // 常见的 ioctl：TCGETS (0x5401), TIOCGWINSZ (0x5413) 等
-    logger_info("sys_ioctl: fd=%d, request=0x%lx (ignored)\n", fd, request);
     return 0;  // 假装成功
 }
 
@@ -79,6 +97,8 @@ static int64_t sys_ioctl(int fd, unsigned long request, unsigned long arg)
  */
 static int64_t sys_read(int fd, char *buf, size_t count)
 {
+    logger_info("[SYSCALL] sys_read: fd=%d, buf=%p, count=%zu\n", fd, buf, count);
+    
     if (fd != STDIN_FILENO) {
         return -9; // -EBADF
     }
@@ -88,6 +108,7 @@ static int64_t sys_read(int fd, char *buf, size_t count)
         buf[i] = dw_uart_getchar();
     }
 
+    logger_info("[SYSCALL] sys_read: read %zu bytes\n", count);
     return (int64_t)count;
 }
 
@@ -109,6 +130,8 @@ static int64_t sys_brk(void *addr)
 {
     uint64_t requested_addr = (uint64_t)addr;
     
+    logger_info("[SYSCALL] sys_brk: addr=%p\n", addr);
+    
     // 简化：总是使用 hello 的堆（因为现在主要是测试 hello.elf）
     uint64_t *current_brk = &hello_brk_current;
     uint64_t heap_start = HELLO_HEAP_START;
@@ -116,19 +139,19 @@ static int64_t sys_brk(void *addr)
     
     // brk(NULL) - 返回当前的 brk 值
     if (requested_addr == 0) {
-        logger_info("sys_brk(NULL) -> %p\n", (void*)*current_brk);
+        logger_info("[SYSCALL] sys_brk(NULL) -> %p\n", (void*)*current_brk);
         return *current_brk;
     }
     
     // brk(addr) - 设置新的 brk 值
     // 检查地址是否在合法范围内
     if (requested_addr < heap_start || requested_addr > heap_end) {
-        logger_warn("sys_brk: addr %p out of range [%p, %p], returning current\n",
+        logger_warn("[SYSCALL] sys_brk: addr %p out of range [%p, %p], returning current\n",
                     (void*)requested_addr, (void*)heap_start, (void*)heap_end);
         return *current_brk; // 返回旧值表示失败
     }
     
-    logger_info("sys_brk: %p -> %p (size: %lu KB)\n",
+    logger_info("[SYSCALL] sys_brk: %p -> %p (size: %lu KB)\n",
                 (void*)*current_brk, (void*)requested_addr,
                 (requested_addr - heap_start) / 1024);
     
@@ -141,10 +164,72 @@ static int64_t sys_brk(void *addr)
  */
 static void sys_exit(int status)
 {
-    logger_info("Process exited with status: %d\n", status);
+    logger_info("[SYSCALL] sys_exit: status=%d\n", status);
     // 简单实现：直接返回到内核主循环
     // TODO: 清理进程资源
 }
+
+/**
+ * sys_rt_sigprocmask - change signal mask
+ * 简化实现：我们不支持信号，但返回成功以避免 libc 崩溃
+ */
+static int64_t sys_rt_sigprocmask(int how, const void *set, void *oldset, size_t sigsetsize)
+{
+    logger_info("[SYSCALL] sys_rt_sigprocmask: how=%d, set=%p, oldset=%p, sigsetsize=%zu\n",
+                how, set, oldset, sigsetsize);
+    
+    (void)how;
+    (void)set;
+    (void)sigsetsize;
+    
+    // 如果请求返回旧的信号掩码，就返回空掩码（所有信号都不被阻塞）
+    if (oldset != NULL && sigsetsize >= 8) {
+        uint64_t *mask = (uint64_t *)oldset;
+        *mask = 0;  // 空掩码
+    }
+    
+    logger_info("[SYSCALL] sys_rt_sigprocmask: returning success (signals not supported)\n");
+    return 0;  // 成功
+}
+
+/**
+ * sys_getitimer - get interval timer value
+ * 简化实现：返回全零的定时器值
+ */
+static int64_t sys_getitimer(int which, void *curr_value)
+{
+    (void)which;
+    
+    logger_info("[SYSCALL] sys_getitimer: which=%d, curr_value=%p\n", which, curr_value);
+    
+    // 如果 curr_value 是 NULL，直接返回成功
+    // 这是合法的调用，调用者可能只是检查系统调用是否支持
+    if (curr_value == NULL) {
+        logger_info("[SYSCALL] sys_getitimer: curr_value is NULL, returning success\n");
+        return 0;  // 成功
+    }
+    
+    // struct itimerval { struct timeval it_interval; struct timeval it_value; }
+    // struct timeval { long tv_sec; long tv_usec; }
+    // 总共 4 个 long (32 bytes on 64-bit)
+    uint64_t *p = (uint64_t *)curr_value;
+    p[0] = 0;  // it_interval.tv_sec
+    p[1] = 0;  // it_interval.tv_usec
+    p[2] = 0;  // it_value.tv_sec
+    p[3] = 0;  // it_value.tv_usec
+    
+    logger_info("[SYSCALL] sys_getitimer: returning zero timer\n");
+    return 0;
+}
+
+/**
+ * sys_mmap - map memory into address space
+ * 
+ * mmap 参数：
+ *   addr   - 建议的映射地址（NULL = 让内核选择）
+ *   length - 映射长度
+ *   prot   - 保护标志（PROT_READ|PROT_WRITE|PROT_EXEC）
+```
 
 /**
  * sys_mmap - map memory into address space
@@ -178,6 +263,9 @@ static uint64_t simple_mmap_current = SIMPLE_MMAP_START;
 static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
                        int fd, int64_t offset)
 {
+    logger_info("[SYSCALL] sys_mmap: addr=%p, length=%zu, prot=0x%x, flags=0x%x, fd=%d, offset=%ld\n",
+                addr, length, prot, flags, fd, offset);
+    
     (void)prot;
     (void)fd;
     (void)offset;
@@ -189,7 +277,7 @@ static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
     
     // 简化实现：只支持匿名映射
     if (!(flags & MAP_ANONYMOUS)) {
-        logger_error("sys_mmap: only MAP_ANONYMOUS supported\n");
+        logger_error("[SYSCALL] sys_mmap: only MAP_ANONYMOUS supported\n");
         return (int64_t)MAP_FAILED;
     }
     
@@ -207,7 +295,7 @@ static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
     
     // 检查是否有足够空间
     if (alloc_addr + aligned_length > mmap_end) {
-        logger_error("sys_mmap: out of memory (requested %zu bytes)\n", length);
+        logger_error("[SYSCALL] sys_mmap: out of memory (requested %zu bytes)\n", length);
         return (int64_t)MAP_FAILED;
     }
     
@@ -217,8 +305,8 @@ static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
     // 更新当前位置
     *current_mmap = alloc_addr + aligned_length;
     
-    logger_info("sys_mmap: addr=%p, length=%zu -> %p (aligned to %zu bytes)\n",
-                addr, length, (void*)alloc_addr, aligned_length);
+    logger_info("[SYSCALL] sys_mmap: allocated %p (aligned %zu bytes)\n",
+                (void*)alloc_addr, aligned_length);
     
     return (int64_t)alloc_addr;
 }
@@ -234,6 +322,8 @@ uint64_t handle_syscall(uint64_t syscall_num, uint64_t arg0, uint64_t arg1,
     (void)arg5;
 
     int64_t ret = 0;
+    
+    logger_info("[SYSCALL] #%llu called\n", syscall_num);
 
     switch (syscall_num) {
         case SYS_ioctl:
@@ -261,6 +351,15 @@ uint64_t handle_syscall(uint64_t syscall_num, uint64_t arg0, uint64_t arg1,
                           (int)arg3, (int)arg4, (int64_t)arg5);
             break;
 
+        case SYS_rt_sigprocmask:
+            ret = sys_rt_sigprocmask((int)arg0, (const void *)arg1, 
+                                     (void *)arg2, (size_t)arg3);
+            break;
+
+        case SYS_getitimer:
+            ret = sys_getitimer((int)arg0, (void *)arg1);
+            break;
+
         case SYS_exit:
         case SYS_exit_group:
             sys_exit((int)arg0);
@@ -268,10 +367,13 @@ uint64_t handle_syscall(uint64_t syscall_num, uint64_t arg0, uint64_t arg1,
             break;
 
         default:
-            logger_warn("Unknown syscall: %llu\n", syscall_num);
+            logger_warn("[SYSCALL] Unknown syscall: %llu (args: %lx, %lx, %lx)\n", 
+                       syscall_num, arg0, arg1, arg2);
             ret = -38; // -ENOSYS (Function not implemented)
             break;
     }
+    
+    logger_info("[SYSCALL] #%llu returned %ld\n", syscall_num, ret);
 
     return (uint64_t)ret;
 }
