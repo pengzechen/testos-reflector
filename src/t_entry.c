@@ -17,6 +17,7 @@
 #include "mem/t_mem.h"
 #include "lib/t_elf.h"
 #include "lib/t_elf_loader.h"
+#include "libc_support.h"
 
 #include "t_psci.h"
 #include "cfg/t_cfg.h"
@@ -471,34 +472,50 @@ t_kernel_main(uint64_t id)
     logger_info("Successfully loaded %zu programs\n", loaded);
     elf_loader_list_programs();
 
-    logger_info("\n=== User Program Execution Test ===\n");
+    // 初始化 TLS（线程局部存储），libc 需要
+    __testos_init_tls();
+
+    logger_info("\n=== Testing simple.elf (no libc) ===\n");
     
-    // 查找 hello.elf 的描述符
-    const elf_descriptor_t *hello_desc = elf_loader_get_program("hello.elf");
-    if (!hello_desc) {
-        logger_error("Cannot find hello.elf descriptor\n");
-        return;
-    }
-    
-    // 临时方案：在内核空间直接调用 main（用于测试动态链接）
-    // 注意：这不是正确的进程执行方式！
-    logger_info("Temporary test: Calling main() in kernel space\n");
-    logger_warn("WARNING: This is for testing only!\n");
-    logger_warn("TODO: Implement proper user-space process execution (EL0)\n");
-    
-    uint64_t main_addr = 0;
-    elf_result_t result = elf_find_symbol(hello_desc, "main", &main_addr);
-    if (result != ELF_SUCCESS) {
-        logger_error("Cannot find 'main' symbol (need --export-dynamic)\n");
-        logger_info("Skipping user program test\n");
-    } else {
-        logger_info("Found main() at 0x%lx\n", main_addr);
+    // 测试 simple.elf - 不依赖 libc，直接使用系统调用
+    const elf_descriptor_t *simple_desc = elf_loader_get_program("simple.elf");
+    if (simple_desc) {
+        logger_info("Found simple.elf at 0x%lx, entry: 0x%lx\n", 
+                    simple_desc->start_addr, simple_desc->entry_point);
         
+        // 直接调用入口点（main 函数）
         typedef int (*main_func_t)(int argc, char **argv, char **envp);
-        main_func_t main_func = (main_func_t)main_addr;
+        main_func_t simple_main = (main_func_t)simple_desc->entry_point;
         
-        int ret = main_func(0, NULL, NULL);
-        logger_info("main() returned: %d\n", ret);
+        logger_info("Calling simple.elf main()...\n");
+        int ret = simple_main(0, NULL, NULL);
+        logger_info("simple.elf returned: %d\n", ret);
+    } else {
+        logger_warn("simple.elf not found\n");
+    }
+
+    logger_info("\n=== Testing hello.elf (with libc) ===\n");
+    
+    // 测试 hello.elf - 依赖 libc
+    const elf_descriptor_t *hello_desc = elf_loader_get_program("hello.elf");
+    if (hello_desc) {
+        logger_info("Found hello.elf at 0x%lx\n", hello_desc->start_addr);
+        
+        // 查找 main 函数
+        uint64_t main_addr = 0;
+        elf_result_t result = elf_find_symbol(hello_desc, "main", &main_addr);
+        if (result != ELF_SUCCESS) {
+            logger_error("Cannot find 'main' symbol\n");
+        } else {
+            logger_info("Found main() at 0x%lx\n", main_addr);
+            
+            typedef int (*main_func_t)(int argc, char **argv, char **envp);
+            main_func_t main_func = (main_func_t)main_addr;
+            
+            // 执行 hello.elf
+            int ret = execute_libc_program(hello_desc->entry_point, main_func);
+            logger_info("hello.elf returned: %d\n", ret);
+        }
     }
     
     // 原来的方式（通过 entry point 和 libc 初始化）

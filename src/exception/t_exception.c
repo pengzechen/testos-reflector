@@ -1,6 +1,7 @@
 
 #include "t_types.h"
 #include "t_exception.h"
+#include "t_syscall.h"
 #include "dev/t_gicv3.h"
 #include "cfg/t_cfg.h"
 #include "dev/t_timer.h"
@@ -37,6 +38,31 @@ handle_sync_exception(uint64_t *stack_pointer)
 
     int ec = ((el1_esr >> 26) & 0b111111);
 
+    // EC = 0x15 (21) 表示 SVC (Supervisor Call) 系统调用
+    if (ec == 0x15) {
+        // 系统调用处理
+        // x8 = 系统调用号, x0-x5 = 参数
+        uint64_t syscall_num = el1_ctx->r[8];
+        uint64_t arg0 = el1_ctx->r[0];
+        uint64_t arg1 = el1_ctx->r[1];
+        uint64_t arg2 = el1_ctx->r[2];
+        uint64_t arg3 = el1_ctx->r[3];
+        uint64_t arg4 = el1_ctx->r[4];
+        uint64_t arg5 = el1_ctx->r[5];
+
+        // 调用系统调用处理函数
+        uint64_t ret = handle_syscall(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5);
+
+        // 将返回值放入 x0
+        el1_ctx->r[0] = ret;
+
+        // 跳过 svc 指令（4 字节）
+        el1_ctx->elr += 4;
+
+        return;
+    }
+
+    // 其他异常的处理
     logger("el1 esr: %x\n", el1_esr);
     logger("ec: %x\n", ec);
     logger("far_el1: %x\n", read_far_el1());

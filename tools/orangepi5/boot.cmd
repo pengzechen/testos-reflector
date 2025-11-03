@@ -24,9 +24,14 @@ setenv librt_size ${filesize}
 
 # --- User programs area (≥ 0x81000000) ---
 # Reserve 0x81000000 - 0x8FFFFFFF for user executables
-# Load hello.elf user application
+
+# Load hello.elf (needs libc)
 ext4load mmc 1:1  0x81000000 hello.elf
 setenv hello_size ${filesize}
+
+# Load simple.elf (standalone, no libc needed)
+ext4load mmc 1:1  0x82000000 simple.elf
+setenv simple_size ${filesize}
 
 # --- ELF Table Setup (0x7F000000 - just below 2GB boundary) ---
 # Create bootloader_elf_table_t structure:
@@ -47,7 +52,7 @@ setenv hello_size ${filesize}
 # Write ELF table header
 mw.l 0x7F000000 0x454C4654   # magic: "ELFT"
 mw.l 0x7F000004 0x00000001   # version: 1
-mw.l 0x7F000008 0x00000006   # count: 6 (5 libraries + 1 executable)
+mw.l 0x7F000008 0x00000007   # count: 7 (5 libraries + 2 executables)
 mw.l 0x7F00000C 0x00000000   # reserved: 0
 
 # Entry 0: libc.so (library, flags=1)
@@ -150,6 +155,24 @@ mw.q 0x7F000208 0x81000000 1     # start_addr: 0x81000000
 mw.q 0x7F000210 ${hello_size} 1  # size
 mw.l 0x7F000218 0x00000000 1     # flags: executable (0)
 mw.l 0x7F00021C 0x00000000 1     # reserved
+
+# Entry 6: simple.elf (executable, flags=0, no libc)
+# Offset: 0x7F000220
+mw 0x7F000220 0x73 1         # 's'
+mw 0x7F000221 0x69 1         # 'i'
+mw 0x7F000222 0x6D 1         # 'm'
+mw 0x7F000223 0x70 1         # 'p'
+mw 0x7F000224 0x6C 1         # 'l'
+mw 0x7F000225 0x65 1         # 'e'
+mw 0x7F000226 0x2E 1         # '.'
+mw 0x7F000227 0x65 1         # 'e'
+mw 0x7F000228 0x6C 1         # 'l'
+mw 0x7F000229 0x66 1         # 'f'
+mw 0x7F00022A 0x00 1         # null terminator
+mw.q 0x7F000260 0x82000000 1     # start_addr: 0x82000000
+mw.q 0x7F000268 ${simple_size} 1 # size
+mw.l 0x7F000270 0x00000000 1     # flags: executable (0)
+mw.l 0x7F000274 0x00000000 1     # reserved
 
 # Add more user programs here:
 # Entry N: my_program (executable, flags=0)
