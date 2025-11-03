@@ -33,6 +33,12 @@ Bootloader 将用户态程序复制到 2GB (0x80000000) 以上的内存区域。
   - R_AARCH64_JUMP_SLOT
   - R_AARCH64_ABS64
 
+#### 3. 自动依赖解析 ⭐新增
+- 解析 ELF 文件的 DT_NEEDED 条目
+- 自动从 bootloader 提供的表中查找依赖库
+- 递归加载所有依赖库
+- 防止重复加载
+
 ### 内存布局
 
 ```
@@ -115,9 +121,43 @@ elf_result_t elf_find_symbol(const elf_descriptor_t *desc,
 
 在已加载的 ELF 中查找符号。
 
+#### 依赖查询
+
+```c
+size_t elf_get_dependencies(uint64_t base_addr, char deps[][64], size_t max_deps);
+```
+
+获取 ELF 文件的依赖库列表（从 DT_NEEDED 条目）。
+
 ### 使用示例
 
-#### 示例 1: 初始化并加载程序
+#### 示例 1: 初始化并自动加载所有程序及依赖
+
+```c
+#include "lib/t_elf_loader.h"
+#include "lib/t_logger.h"
+
+void init_user_programs(void)
+{
+    // Bootloader 将 ELF 表放在固定地址
+    const uint64_t elf_table_addr = 0x7F000000;
+    
+    // 初始化加载器 - 自动解析并加载所有依赖
+    size_t loaded = elf_loader_init(elf_table_addr);
+    logger_info("成功加载 %zu 个程序（包括依赖库）\n", loaded);
+    
+    // 列出所有程序
+    elf_loader_list_programs();
+}
+```
+
+**说明**: `elf_loader_init()` 会自动：
+1. 读取每个 ELF 的 DT_NEEDED 条目
+2. 从表中查找依赖的库
+3. 递归加载所有依赖（先加载依赖，再加载主程序）
+4. 避免重复加载
+
+#### 示例 2: 初始化并加载程序（旧版本）
 
 ```c
 #include "lib/t_elf_loader.h"
@@ -269,6 +309,12 @@ The bootloader copies user-mode programs to memory above 2GB (0x80000000). Each 
   - R_AARCH64_GLOB_DAT
   - R_AARCH64_JUMP_SLOT
   - R_AARCH64_ABS64
+
+#### 3. Automatic Dependency Resolution ⭐New
+- Parse DT_NEEDED entries from ELF files
+- Automatically find dependent libraries from bootloader-provided table
+- Recursively load all dependencies
+- Prevent duplicate loading
 
 ### Memory Layout
 

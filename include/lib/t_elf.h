@@ -266,6 +266,15 @@ elf_result_t elf_find_symbol(const elf_descriptor_t *desc,
                               uint64_t *symbol_addr);
 
 /**
+ * Get list of library dependencies from an ELF file (DT_NEEDED entries)
+ * @param base_addr Base address where ELF is loaded in memory
+ * @param deps Array to store dependency names (output)
+ * @param max_deps Maximum number of dependencies to return
+ * @return Number of dependencies found, or 0 if none
+ */
+size_t elf_get_dependencies(uint64_t base_addr, char deps[][64], size_t max_deps);
+
+/**
  * Get human-readable error message for an error code
  * @param result Error code
  * @return Error message string

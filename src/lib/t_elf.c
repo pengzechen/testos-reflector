@@ -414,6 +414,77 @@ elf_find_symbol(const elf_descriptor_t *desc,
 }
 
 /**
+ * Get list of library dependencies from an ELF file
+ */
+size_t
+elf_get_dependencies(uint64_t base_addr, char deps[][64], size_t max_deps)
+{
+    if (base_addr == 0 || !deps || max_deps == 0) {
+        return 0;
+    }
+
+    const elf64_ehdr_t *ehdr = (const elf64_ehdr_t *) base_addr;
+    const uint8_t *elf_base = (const uint8_t *) base_addr;
+
+    // Validate header first
+    if (elf_validate_header(ehdr) != ELF_SUCCESS) {
+        return 0;
+    }
+
+    // Find program headers
+    const elf64_phdr_t *phdr = (const elf64_phdr_t *) (elf_base + ehdr->e_phoff);
+
+    // Find dynamic segment
+    const elf64_phdr_t *dyn_phdr = NULL;
+    for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
+        if (phdr[i].p_type == PT_DYNAMIC) {
+            dyn_phdr = &phdr[i];
+            break;
+        }
+    }
+
+    if (!dyn_phdr) {
+        // No dynamic segment, no dependencies
+        return 0;
+    }
+
+    // Parse dynamic section
+    const elf64_dyn_t *dyn = (const elf64_dyn_t *) (elf_base + dyn_phdr->p_offset);
+    const char *strtab = NULL;
+
+    // First pass: find string table
+    for (size_t i = 0; dyn[i].d_tag != DT_NULL; i++) {
+        if (dyn[i].d_tag == DT_STRTAB) {
+            strtab = (const char *) (elf_base + dyn[i].d_un.d_ptr);
+            break;
+        }
+    }
+
+    if (!strtab) {
+        return 0;
+    }
+
+    // Second pass: collect DT_NEEDED entries
+    size_t dep_count = 0;
+    for (size_t i = 0; dyn[i].d_tag != DT_NULL && dep_count < max_deps; i++) {
+        if (dyn[i].d_tag == DT_NEEDED) {
+            const char *lib_name = strtab + dyn[i].d_un.d_val;
+            
+            // Copy library name to output array
+            size_t j;
+            for (j = 0; j < 63 && lib_name[j] != '\0'; j++) {
+                deps[dep_count][j] = lib_name[j];
+            }
+            deps[dep_count][j] = '\0';
+            
+            dep_count++;
+        }
+    }
+
+    return dep_count;
+}
+
+/**
  * Get human-readable error message
  */
 const char *

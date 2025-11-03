@@ -17,6 +17,172 @@ static elf_descriptor_t loaded_programs[MAX_ELF_FILES];
 static size_t num_loaded_programs = 0;
 
 /**
+ * Global pointer to bootloader table for dependency resolution
+ */
+static const bootloader_elf_table_t *g_elf_table = NULL;
+
+/**
+ * Helper function to find an ELF in the bootloader table by name
+ */
+static const bootloader_elf_info_t *
+find_elf_in_table(const char *name)
+{
+    if (!g_elf_table || !name) {
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < g_elf_table->count; i++) {
+        const bootloader_elf_info_t *info = &g_elf_table->entries[i];
+        
+        // Compare names
+        const char *s1 = info->name;
+        const char *s2 = name;
+        bool match = true;
+        while (*s1 || *s2) {
+            if (*s1 != *s2) {
+                match = false;
+                break;
+            }
+            s1++;
+            s2++;
+        }
+        
+        if (match) {
+            return info;
+        }
+    }
+    
+    return NULL;
+}
+
+/**
+ * Helper function to check if an ELF is already loaded
+ */
+static bool
+is_elf_loaded(const char *name)
+{
+    if (!name) {
+        return false;
+    }
+
+    for (size_t i = 0; i < num_loaded_programs; i++) {
+        const elf_descriptor_t *desc = &loaded_programs[i];
+        if (!desc->is_loaded) {
+            continue;
+        }
+        
+        // Compare names
+        const char *s1 = desc->name;
+        const char *s2 = name;
+        bool match = true;
+        while (*s1 || *s2) {
+            if (*s1 != *s2) {
+                match = false;
+                break;
+            }
+            s1++;
+            s2++;
+        }
+        
+        if (match) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Load an ELF and its dependencies recursively
+ * 
+ * @param name ELF name to load
+ * @return true if loaded successfully, false otherwise
+ */
+static bool
+load_elf_with_dependencies(const char *name)
+{
+    if (!name || !g_elf_table) {
+        return false;
+    }
+
+    // Check if already loaded
+    if (is_elf_loaded(name)) {
+        logger_info("  %s: Already loaded\n", name);
+        return true;
+    }
+
+    // Find ELF in table
+    const bootloader_elf_info_t *info = find_elf_in_table(name);
+    if (!info) {
+        logger_error("  %s: Not found in table\n", name);
+        return false;
+    }
+
+    // Check dependencies first
+    char deps[8][64];  // Support up to 8 dependencies
+    size_t dep_count = elf_get_dependencies(info->start_addr, deps, 8);
+    
+    if (dep_count > 0) {
+        logger_info("  %s: Found %zu dependencies\n", name, dep_count);
+        for (size_t i = 0; i < dep_count; i++) {
+            logger_info("    - %s\n", deps[i]);
+            if (!load_elf_with_dependencies(deps[i])) {
+                logger_error("  %s: Failed to load dependency %s\n", name, deps[i]);
+                return false;
+            }
+        }
+    }
+
+    // Now load this ELF
+    if (num_loaded_programs >= MAX_ELF_FILES) {
+        logger_error("  %s: Too many programs loaded\n", name);
+        return false;
+    }
+
+    elf_descriptor_t *desc = &loaded_programs[num_loaded_programs];
+
+    // Copy name
+    size_t name_len = 0;
+    while (info->name[name_len] && name_len < 63) {
+        desc->name[name_len] = info->name[name_len];
+        name_len++;
+    }
+    desc->name[name_len] = '\0';
+
+    // Copy other fields
+    desc->start_addr = info->start_addr;
+    desc->size = info->size;
+    desc->is_loaded = false;
+
+    logger_info("  %s: Loading at 0x%llx (%llu bytes)\n", 
+                desc->name, desc->start_addr, desc->size);
+
+    // Validate address range (should be >= 2GB)
+    if (desc->start_addr < 0x80000000ULL) {
+        logger_error("  %s: Invalid address below 2GB\n", name);
+        return false;
+    }
+
+    // Load based on type
+    elf_result_t result;
+    if (info->flags & ELF_FLAG_IS_LIBRARY) {
+        result = elf_load_dynamic(desc, 0);
+    } else {
+        result = elf_load_executable(desc);
+    }
+
+    if (result == ELF_SUCCESS) {
+        logger_info("  %s: Loaded successfully (entry: 0x%llx)\n", 
+                    desc->name, desc->entry_point);
+        num_loaded_programs++;
+        return true;
+    } else {
+        logger_error("  %s: Failed - %s\n", desc->name, elf_error_string(result));
+        return false;
+    }
+}
+
+/**
  * Initialize the ELF loader with bootloader data
  * 
  * @param table_addr Address of the bootloader ELF table
@@ -52,57 +218,21 @@ elf_loader_init(uint64_t table_addr)
 
     logger_info("Found %u ELF file(s) from bootloader\n", table->count);
 
-    // Load each ELF file
+    // Store table reference for dependency resolution
+    g_elf_table = table;
     num_loaded_programs = 0;
+
+    // Load each ELF file with dependency resolution
     for (uint32_t i = 0; i < table->count; i++) {
         const bootloader_elf_info_t *info = &table->entries[i];
-        elf_descriptor_t *desc = &loaded_programs[num_loaded_programs];
-
-        // Copy name
-        size_t name_len = 0;
-        while (info->name[name_len] && name_len < 63) {
-            desc->name[name_len] = info->name[name_len];
-            name_len++;
-        }
-        desc->name[name_len] = '\0';
-
-        // Copy other fields
-        desc->start_addr = info->start_addr;
-        desc->size = info->size;
-        desc->is_loaded = false;
-
-        logger_info("\n--- Loading ELF #%u ---\n", i);
-        logger_info("  Name: %s\n", desc->name);
-        logger_info("  Address: 0x%llx\n", desc->start_addr);
-        logger_info("  Size: %llu bytes\n", desc->size);
-
-        // Validate address range (should be >= 2GB)
-        if (desc->start_addr < 0x80000000ULL) {
-            logger_error("  Invalid address: below 2GB boundary\n");
-            continue;
-        }
-
-        // Load based on type
-        elf_result_t result;
-        if (info->flags & ELF_FLAG_IS_LIBRARY) {
-            logger_info("  Type: Dynamic Library\n");
-            result = elf_load_dynamic(desc, 0);
-        } else {
-            logger_info("  Type: Executable\n");
-            result = elf_load_executable(desc);
-        }
-
-        if (result == ELF_SUCCESS) {
-            logger_info("  Status: Loaded successfully\n");
-            logger_info("  Entry Point: 0x%llx\n", desc->entry_point);
-            num_loaded_programs++;
-        } else {
-            logger_error("  Status: Failed - %s\n", elf_error_string(result));
-        }
+        
+        logger_info("\n--- Processing ELF #%u: %s ---\n", i, info->name);
+        
+        // Load with dependencies
+        load_elf_with_dependencies(info->name);
     }
 
-    logger_info("\nLoaded %zu out of %u ELF file(s)\n", 
-                num_loaded_programs, table->count);
+    logger_info("\n=== Total: Loaded %zu ELF file(s) ===\n", num_loaded_programs);
 
     return num_loaded_programs;
 }
