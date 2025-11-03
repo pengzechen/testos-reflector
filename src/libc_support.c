@@ -8,51 +8,6 @@
 #include "lib/t_logger.h"
 
 /**
- * Minimal __libc_start_main implementation
- * 
- * This is called by the _start code in dynamically linked programs.
- * We provide a minimal version that just calls main() and exits.
- */
-int __testos_libc_start_main(
-    int (*main)(int, char **, char **),
-    int argc,
-    char **argv,
-    void (*init)(void),
-    void (*fini)(void),
-    void (*rtld_fini)(void),
-    void *stack_end)
-{
-    (void)init;
-    (void)fini;
-    (void)rtld_fini;
-    (void)stack_end;
-    
-    logger_info("__testos_libc_start_main: Starting user program\n");
-    logger_info("  main = 0x%lx\n", (uint64_t)main);
-    logger_info("  argc = %d\n", argc);
-    
-    // Call main
-    int ret = main(argc, argv, NULL);
-    
-    logger_info("__testos_libc_start_main: main() returned %d\n", ret);
-    
-    return ret;
-}
-
-/**
- * 空的 init/fini 函数供 __libc_start_main 使用
- */
-static void dummy_init(void)
-{
-    logger_info("dummy init called\n");
-}
-
-static void dummy_fini(void)
-{
-    logger_info("dummy fini called\n");
-}
-
-/**
  * 执行一个使用 libc 的用户程序
  * 
  * 这个函数准备好栈帧，然后跳转到程序的入口点（_start）

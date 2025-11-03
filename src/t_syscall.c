@@ -124,7 +124,7 @@ static int64_t sys_read(int fd, char *buf, size_t count)
 #define SIMPLE_HEAP_END   0x83000000UL
 
 static uint64_t hello_brk_current = HELLO_HEAP_START;
-static uint64_t simple_brk_current = SIMPLE_HEAP_START;
+// static uint64_t simple_brk_current = SIMPLE_HEAP_START;
 
 static int64_t sys_brk(void *addr)
 {
@@ -229,9 +229,9 @@ static int64_t sys_getitimer(int which, void *curr_value)
  *   addr   - 建议的映射地址（NULL = 让内核选择）
  *   length - 映射长度
  *   prot   - 保护标志（PROT_READ|PROT_WRITE|PROT_EXEC）
-```
+ */
 
-/**
+/*
  * sys_mmap - map memory into address space
  * 
  * mmap 参数：
@@ -258,7 +258,7 @@ static int64_t sys_getitimer(int which, void *curr_value)
 #define SIMPLE_MMAP_END   0x85000000UL
 
 static uint64_t hello_mmap_current = HELLO_MMAP_START;
-static uint64_t simple_mmap_current = SIMPLE_MMAP_START;
+// static uint64_t simple_mmap_current = SIMPLE_MMAP_START;
 
 static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
                        int fd, int64_t offset)

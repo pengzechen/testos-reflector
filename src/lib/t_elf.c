@@ -10,49 +10,6 @@
 #include "lib/t_string.h"
 #include "mem/t_mem.h"
 
-/* Helper function to copy memory */
-static void
-elf_memcpy(void *dst, const void *src, size_t n)
-{
-    uint8_t       *d = (uint8_t *) dst;
-    const uint8_t *s = (const uint8_t *) src;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = s[i];
-    }
-}
-
-/* Helper function to set memory to zero */
-static void
-elf_memset(void *dst, uint8_t val, size_t n)
-{
-    uint8_t *d = (uint8_t *) dst;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = val;
-    }
-}
-
-/* Helper function to compare strings */
-static int
-elf_strcmp(const char *s1, const char *s2)
-{
-    while (*s1 && (*s1 == *s2)) {
-        s1++;
-        s2++;
-    }
-    return *(const uint8_t *) s1 - *(const uint8_t *) s2;
-}
-
-/* Helper function to get string length */
-static size_t
-elf_strlen(const char *s)
-{
-    size_t len = 0;
-    while (s[len]) {
-        len++;
-    }
-    return len;
-}
-
 /**
  * Validate an ELF header
  */
@@ -195,12 +152,12 @@ elf_load_segments(const elf64_ehdr_t *ehdr, uint64_t base_addr, uint64_t load_ba
 
             // Copy file content
             if (p->p_filesz > 0) {
-                elf_memcpy((void *) dest_addr, src, p->p_filesz);
+                memcpy((void *) dest_addr, src, p->p_filesz);
             }
 
             // Zero out remaining memory (BSS section)
             if (p->p_memsz > p->p_filesz) {
-                elf_memset((void *) (dest_addr + p->p_filesz), 0, p->p_memsz - p->p_filesz);
+                memset((void *) (dest_addr + p->p_filesz), 0, p->p_memsz - p->p_filesz);
             }
         }
     }
@@ -456,7 +413,7 @@ elf_find_symbol(const elf_descriptor_t *desc,
         }
 
         const char *name = strtab + sym->st_name;
-        if (elf_strcmp(name, symbol_name) == 0) {
+        if (strcmp(name, symbol_name) == 0) {
             uint64_t load_base = (desc->type == ET_DYN) ? desc->start_addr : 0;
             *symbol_addr = load_base + sym->st_value;
             return ELF_SUCCESS;
