@@ -109,3 +109,4 @@ coverage/
 # Static analysis
 cppcheck-result.xml
 scan-build-*/
+_codeql_detected_source_root
