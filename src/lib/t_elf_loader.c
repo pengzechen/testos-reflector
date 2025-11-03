@@ -227,13 +227,13 @@ elf_loader_init(uint64_t table_addr)
     for (uint32_t i = 0; i < table->count; i++) {
         const bootloader_elf_info_t *info = &table->entries[i];
         
-        logger_info("\n--- Processing ELF #%u: %s ---\n", i, info->name);
+        logger_info("--- Processing ELF #%u: %s ---\n", i, info->name);
         
         // Load with dependencies
         load_elf_with_dependencies(info->name);
     }
 
-    logger_info("\n=== Total: Loaded %zu ELF file(s) ===\n", num_loaded_programs);
+    logger_info("=== Total: Loaded %zu ELF file(s) ===\n", num_loaded_programs);
 
     return num_loaded_programs;
 }

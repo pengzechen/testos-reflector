@@ -33,3 +33,10 @@ sudo rkdeveloptool wlx root /home/ajax/Projects/rk3588/StarryOS/arceos/disk.img
 
 make ARCH=aarch64 LOG=debug opi5p
 make ARCH=aarch64 LOG=debug flash
+
+
+aarch64-linux-musl-gcc -O2 -Wall -Wextra \
+  -nostdlib -nostartfiles \
+  -static -fPIE -pie \
+  -e main \
+  simple.c -o simple.elf

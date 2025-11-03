@@ -74,7 +74,7 @@ void test_loop(void) {
 }
 
 int main(int argc, char *argv[]) {
-    printf("\n");
+    printf("6\n");
     printf("========================================\n");
     printf("  TestOS User Application - Hello World\n");
     printf("========================================\n");
@@ -87,11 +87,11 @@ int main(int argc, char *argv[]) {
     }
     
     // 运行各种测试
-    test_hello();
-    test_string();
-    test_math();
-    test_memory();
-    test_loop();
+    // test_hello();
+    // test_string();
+    // test_math();
+    // test_memory();
+    // test_loop();
     
     printf("\n");
     printf("========================================\n");

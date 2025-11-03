@@ -7,6 +7,9 @@
 
 #include "t_types.h"
 
+typedef int (*main_func_t)(int argc, char **argv, char **envp);
+
+
 /**
  * Initialize TLS (Thread Local Storage) for libc
  */
@@ -19,7 +22,7 @@ void __testos_init_tls(void);
  * @param main_func Pointer to main function
  * @return Return value from main()
  */
-int execute_libc_program(uint64_t entry_point, int (*main_func)(int, char **, char **));
+int execute_libc_program(uint64_t entry_point, main_func_t main_func);
 
 /**
  * Get errno location (for libc)

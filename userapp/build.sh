@@ -64,9 +64,10 @@ compile_program() {
     
     # 编译选项
     CFLAGS=(
-        -O2                          # 优化级别
+        -O0                          # 优化级别
         -Wall                        # 所有警告
         -Wextra                      # 额外警告
+        -nostdinc                    # 不使用标准系统头文件目录
         -I"${MUSL_INCLUDE_DIR}"      # musl 头文件
     )
     
@@ -79,6 +80,12 @@ compile_program() {
     
     info "编译选项: ${CFLAGS[*]}"
     info "链接选项: ${LDFLAGS[*]}"
+    
+    # 显示完整的编译命令
+    echo ""
+    echo -e "${CYAN}[CMD]${NC} 完整编译命令:"
+    echo "${CC} ${CFLAGS[*]} ${LDFLAGS[*]} ${SOURCE_FILE} -o ${OUTPUT_ELF}"
+    echo ""
     
     # 执行编译
     ${CC} "${CFLAGS[@]}" "${LDFLAGS[@]}" \

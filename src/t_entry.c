@@ -454,14 +454,6 @@ t_kernel_main(uint64_t id)
     size_t heap_size = (1 << 28);  // 1 G
     t_mem_init(heap_size);
 
-#if 0
-    void t_mem_run_tests(void);
-    void t_mem_run_stress_tests(void);
-    t_mem_run_tests();
-    t_mem_run_stress_tests();
-#endif
-
-#if 1
     const uint64_t table_addr = 0x7F000000;
     // Initialize the ELF loader
     size_t loaded = elf_loader_init(table_addr);
@@ -472,10 +464,16 @@ t_kernel_main(uint64_t id)
     logger_info("Successfully loaded %zu programs\n", loaded);
     elf_loader_list_programs();
 
-    // 初始化 TLS（线程局部存储），libc 需要
-    __testos_init_tls();
+#if 0
+    void t_mem_run_tests(void);
+    void t_mem_run_stress_tests(void);
+    t_mem_run_tests();
+    t_mem_run_stress_tests();
+#endif
 
-    logger_info("\n=== Testing simple.elf (no libc) ===\n");
+
+#if 1 // set to 1 to enable simple.elf test without libc
+    logger_info("=== Testing simple.elf (no libc) ===\n");
     
     // 测试 simple.elf - 不依赖 libc，直接使用系统调用
     const elf_descriptor_t *simple_desc = elf_loader_get_program("simple.elf");
@@ -493,8 +491,12 @@ t_kernel_main(uint64_t id)
     } else {
         logger_warn("simple.elf not found\n");
     }
+#endif
 
-    logger_info("\n=== Testing hello.elf (with libc) ===\n");
+#if 1 // set to 1 to enable hello.elf test with libc
+    // 初始化 TLS（线程局部存储），libc 需要
+    __testos_init_tls();
+    logger_info("=== Testing hello.elf (with libc) ===\n");
     
     // 测试 hello.elf - 依赖 libc
     const elf_descriptor_t *hello_desc = elf_loader_get_program("hello.elf");
@@ -509,22 +511,19 @@ t_kernel_main(uint64_t id)
         } else {
             logger_info("Found main() at 0x%lx\n", main_addr);
             
-            typedef int (*main_func_t)(int argc, char **argv, char **envp);
-            main_func_t main_func = (main_func_t)main_addr;
-            
             // 执行 hello.elf
-            int ret = execute_libc_program(hello_desc->entry_point, main_func);
+            int ret = execute_libc_program(hello_desc->entry_point, (main_func_t)main_addr);
             logger_info("hello.elf returned: %d\n", ret);
         }
     }
-    
-    // 原来的方式（通过 entry point 和 libc 初始化）
-    // if (elf_loader_execute("hello.elf")) {
-    //     logger_info("Hello process completed\n");
-    // } else {
-    //     logger_error("Failed to start hello process\n");
-    // }
 #endif
+
+// 原来的方式（通过 entry point 和 libc 初始化）
+// if (elf_loader_execute("hello.elf")) {
+//     logger_info("Hello process completed\n");
+// } else {
+//     logger_error("Failed to start hello process\n");
+// }
 
 #if 0
     {
