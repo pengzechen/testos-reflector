@@ -6,50 +6,9 @@
  * provides a table describing each ELF file.
  */
 
-#include "lib/t_elf.h"
+#include "lib/t_elf_loader.h"
 #include "lib/t_logger.h"
 #include "t_types.h"
-
-/* Maximum number of ELF files that can be loaded */
-#define MAX_ELF_FILES 32
-
-/**
- * Bootloader ELF Information Structure
- * 
- * This structure is provided by the bootloader to describe each ELF file
- * it has placed in memory. The structure should be located at a known
- * address that the bootloader and kernel agree upon.
- */
-typedef struct {
-    char     name[64];       // ELF file name
-    uint64_t start_addr;     // Start address in memory (>= 0x80000000)
-    uint64_t size;           // Size in bytes
-    uint32_t flags;          // Flags (bit 0: 0=executable, 1=library)
-    uint32_t reserved;       // Reserved for future use
-} __attribute__((packed)) bootloader_elf_info_t;
-
-/**
- * Bootloader ELF Table
- * 
- * Table of all ELF files loaded by the bootloader.
- * Located at a fixed address known to both bootloader and kernel.
- */
-typedef struct {
-    uint32_t magic;          // Magic number: 0x454C4654 ("ELF" + "T")
-    uint32_t version;        // Table version
-    uint32_t count;          // Number of ELF entries
-    uint32_t reserved;       // Reserved for future use
-    bootloader_elf_info_t entries[MAX_ELF_FILES];
-} __attribute__((packed)) bootloader_elf_table_t;
-
-/* Expected magic number for ELF table */
-#define ELF_TABLE_MAGIC 0x454C4654
-
-/* Expected table version */
-#define ELF_TABLE_VERSION 1
-
-/* Flag bits */
-#define ELF_FLAG_IS_LIBRARY 0x00000001
 
 /**
  * Global array to store loaded ELF descriptors

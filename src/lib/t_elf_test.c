@@ -12,9 +12,10 @@
 static void
 create_test_elf_header(elf64_ehdr_t *ehdr)
 {
-    // Initialize to zero
+    // Initialize to zero using memset-like loop
+    uint8_t *p = (uint8_t *)ehdr;
     for (size_t i = 0; i < sizeof(elf64_ehdr_t); i++) {
-        ((uint8_t *) ehdr)[i] = 0;
+        p[i] = 0;
     }
 
     // Set magic number
@@ -114,9 +115,10 @@ test_elf_descriptor(void)
 
     elf_descriptor_t desc;
 
-    // Initialize descriptor
+    // Initialize descriptor to zero
+    uint8_t *p = (uint8_t *)&desc;
     for (size_t i = 0; i < sizeof(elf_descriptor_t); i++) {
-        ((uint8_t *) &desc)[i] = 0;
+        p[i] = 0;
     }
 
     // Set descriptor fields

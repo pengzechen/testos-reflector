@@ -125,7 +125,8 @@ elf_apply_relocations(uint64_t base_addr,
                     const elf64_sym_t *sym = &symtab[sym_idx];
                     *reloc_addr = base_addr + sym->st_value;
                 } else {
-                    logger_warn("Symbol index %llu not found for relocation\n", sym_idx);
+                    logger_error("Symbol index %llu not found for relocation type %llu\n", sym_idx, type);
+                    return ELF_ERROR_RELOCATION_FAILED;
                 }
                 break;
 
@@ -134,6 +135,9 @@ elf_apply_relocations(uint64_t base_addr,
                 if (symtab && sym_idx > 0) {
                     const elf64_sym_t *sym = &symtab[sym_idx];
                     *reloc_addr = base_addr + sym->st_value + r->r_addend;
+                } else {
+                    logger_error("Symbol index %llu not found for ABS64 relocation\n", sym_idx);
+                    return ELF_ERROR_RELOCATION_FAILED;
                 }
                 break;
 
@@ -211,19 +215,24 @@ elf_process_dynamic(const elf64_ehdr_t *ehdr, uint64_t base_addr, uint64_t load_
     const char *strtab = NULL;
 
     // Parse dynamic entries
+    // Note: For ELF files loaded in place, d_ptr values are treated as offsets
+    // from elf_base. This works for our use case where the ELF file is already
+    // in memory at base_addr and we're processing it in-place.
     for (size_t i = 0; dyn[i].d_tag != DT_NULL; i++) {
         switch (dyn[i].d_tag) {
             case DT_RELA:
-                // Find RELA section by offset
+                // Treat d_ptr as offset from elf_base (works for in-place loading)
                 rela = (const elf64_rela_t *) (elf_base + dyn[i].d_un.d_ptr);
                 break;
             case DT_RELASZ:
                 rela_sz = dyn[i].d_un.d_val;
                 break;
             case DT_SYMTAB:
+                // Treat d_ptr as offset from elf_base
                 symtab = (const elf64_sym_t *) (elf_base + dyn[i].d_un.d_ptr);
                 break;
             case DT_STRTAB:
+                // Treat d_ptr as offset from elf_base
                 strtab = (const char *) (elf_base + dyn[i].d_un.d_ptr);
                 break;
         }
