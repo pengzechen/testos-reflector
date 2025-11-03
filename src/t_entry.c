@@ -458,6 +458,12 @@ t_kernel_main(uint64_t id)
     t_mem_run_stress_tests();
 #endif
 
+#if 1
+    // ELF 加载功能测试
+    void t_elf_run_tests(void);
+    t_elf_run_tests();
+#endif
+
 #if 0
     {
     // scmi 时钟
