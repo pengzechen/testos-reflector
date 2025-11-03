@@ -461,7 +461,9 @@ t_kernel_main(uint64_t id)
 #if 1
     // ELF 加载功能测试
     void t_elf_run_tests(void);
+    void test_bootloader_example(void);
     t_elf_run_tests();
+    test_bootloader_example();
 #endif
 
 #if 0
