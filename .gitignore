@@ -4,6 +4,7 @@ bin/
 obj/
 out/
 *.uimg
+tools/musl-libs
 
 # Compiled object files
 *.o
@@ -12,6 +13,74 @@ out/
 *.bin
 *.img
 *.iso
+
+# GCC RTL dump files (intermediate compilation stages)
+*.expand
+*.vregs
+*.into_cfglayout
+*.jump
+*.subreg1
+*.dfinit
+*.cse1
+*.fwprop1
+*.cprop1
+*.pre
+*.cprop2
+*.cse_local
+*.ce1
+*.reginfo
+*.loop2
+*.loop2_init
+*.loop2_invariant
+*.loop2_done
+*.cprop3
+*.cse2
+*.dse1
+*.fwprop2
+*.auto_inc_dec
+*.init-regs
+*.ud_dce
+*.combine
+*.ce2
+*.jump_after_combine
+*.outof_cfglayout
+*.split1
+*.subreg3
+*.asmcons
+*.sched1
+*.early_remat
+*.ira
+*.reload
+*.postreload
+*.split2
+*.ree
+*.cmpelim
+*.pro_and_epilogue
+*.dse2
+*.jump2
+*.compgotos
+*.sched_fusion
+*.peephole2
+*.ce3
+*.cprop_hardreg
+*.rtl_dce
+*.bbro
+*.split3
+*.sched2
+*.zero_call_used_regs
+*.alignments
+*.barriers
+*.split5
+*.shorten
+*.nothrow
+*.dwarf2
+*.final
+*.dfinish
+*.[0-9][0-9][0-9]r.*
+
+# User application build artifacts
+userapp/*.elf
+userapp/*.stripped.elf
 
 # Linker output
 *.map

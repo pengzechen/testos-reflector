@@ -8,6 +8,7 @@
 
 #include "lib/t_elf_loader.h"
 #include "lib/t_logger.h"
+#include "lib/t_string.h"
 #include "t_types.h"
 
 /**
@@ -154,8 +155,8 @@ load_elf_with_dependencies(const char *name)
     desc->size = info->size;
     desc->is_loaded = false;
 
-    logger_info("  %s: Loading at 0x%llx (%llu bytes)\n", 
-                desc->name, desc->start_addr, desc->size);
+    logger_info("  %s: Loading at 0x%llx (%llu bytes), flags=0x%x\n", 
+                desc->name, desc->start_addr, desc->size, info->flags);
 
     // Validate address range (should be >= 2GB)
     if (desc->start_addr < 0x80000000ULL) {
@@ -345,11 +346,109 @@ elf_loader_list_programs(void)
         logger_info("    Address: 0x%llx\n", desc->start_addr);
         logger_info("    Size: %llu bytes\n", desc->size);
         logger_info("    Entry: 0x%llx\n", desc->entry_point);
-        logger_info("    Type: %s\n", 
-                    desc->type == ET_EXEC ? "Executable" : "Library");
+        
+        // 根据 flags 判断类型（更准确）
+        // 从 bootloader table 中查找对应的 flags
+        const bootloader_elf_info_t *info = find_elf_in_table(desc->name);
+        bool is_library = info && (info->flags & ELF_FLAG_IS_LIBRARY);
+        
+        logger_info("    Type: %s\n", is_library ? "Library" : "Executable");
     }
 
     logger_info("======================\n");
+}
+
+/**
+ * Resolve a symbol from loaded libraries
+ */
+uint64_t
+elf_loader_resolve_symbol(const char *symbol_name)
+{
+    if (!symbol_name) {
+        return 0;
+    }
+
+    // Search all loaded libraries for the symbol
+    for (size_t i = 0; i < num_loaded_programs; i++) {
+        const elf_descriptor_t *desc = &loaded_programs[i];
+        
+        // Only search in libraries (not executables)
+        if (!desc->is_loaded || desc->type != ET_DYN) {
+            continue;
+        }
+
+        // Get ELF header and find symbol table
+        const elf64_ehdr_t *ehdr = (const elf64_ehdr_t *) desc->start_addr;
+        const uint8_t *elf_base = (const uint8_t *) desc->start_addr;
+        const elf64_phdr_t *phdr = (const elf64_phdr_t *) (elf_base + ehdr->e_phoff);
+
+        // Find dynamic segment
+        const elf64_phdr_t *dyn_phdr = NULL;
+        for (uint16_t j = 0; j < ehdr->e_phnum; j++) {
+            if (phdr[j].p_type == PT_DYNAMIC) {
+                dyn_phdr = &phdr[j];
+                break;
+            }
+        }
+
+        if (!dyn_phdr) {
+            continue;
+        }
+
+        // Parse dynamic section to find symbol table
+        const elf64_dyn_t *dyn = (const elf64_dyn_t *) (elf_base + dyn_phdr->p_offset);
+        const elf64_sym_t *symtab = NULL;
+        const char *strtab = NULL;
+        uint64_t syment_size = sizeof(elf64_sym_t);
+
+        for (size_t j = 0; dyn[j].d_tag != DT_NULL; j++) {
+            switch (dyn[j].d_tag) {
+                case DT_SYMTAB:
+                    symtab = (const elf64_sym_t *) (elf_base + dyn[j].d_un.d_ptr);
+                    break;
+                case DT_STRTAB:
+                    strtab = (const char *) (elf_base + dyn[j].d_un.d_ptr);
+                    break;
+                case DT_SYMENT:
+                    syment_size = dyn[j].d_un.d_val;
+                    break;
+            }
+        }
+
+        if (!symtab || !strtab) {
+            continue;
+        }
+
+        // Search symbol table
+        // Note: We don't have DT_SYMCOUNT, so we search until we find the symbol
+        // or reach an invalid entry
+        for (size_t j = 0; j < 10000; j++) {  // Reasonable upper limit
+            const elf64_sym_t *sym = (const elf64_sym_t *)((uint8_t *)symtab + j * syment_size);
+            
+            // Skip undefined symbols
+            if (sym->st_shndx == 0 || sym->st_name == 0) {
+                continue;
+            }
+
+            // Check if name matches
+            const char *name = strtab + sym->st_name;
+            if (strcmp(name, symbol_name) == 0) {
+                // Found the symbol!
+                uint64_t symbol_addr = desc->start_addr + sym->st_value;
+                logger_info("Resolved symbol '%s' to 0x%llx (in %s)\n",
+                           symbol_name, symbol_addr, desc->name);
+                return symbol_addr;
+            }
+
+            // Stop if we've gone too far (heuristic: symbol value is too large)
+            if (sym->st_value > desc->size) {
+                break;
+            }
+        }
+    }
+
+    logger_warn("Symbol '%s' not found in any loaded library\n", symbol_name);
+    return 0;
 }
 
 /**

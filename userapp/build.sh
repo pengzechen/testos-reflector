@@ -74,6 +74,7 @@ compile_program() {
     LDFLAGS=(
         -L"${MUSL_LIB_DIR}"          # musl 库路径
         -Wl,-dynamic-linker,/lib/ld-musl-aarch64.so.1  # 动态链接器
+        -Wl,--export-dynamic         # 导出所有全局符号到动态符号表
     )
     
     info "编译选项: ${CFLAGS[*]}"

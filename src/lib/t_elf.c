@@ -120,10 +120,33 @@ elf_apply_relocations(uint64_t base_addr,
 
             case R_AARCH64_GLOB_DAT:
             case R_AARCH64_JUMP_SLOT:
-                // Symbol value
+                // Symbol value - need to resolve from symbol table or external libraries
                 if (symtab && sym_idx > 0) {
                     const elf64_sym_t *sym = &symtab[sym_idx];
-                    *reloc_addr = base_addr + sym->st_value;
+                    
+                    // Check if symbol is defined in this ELF
+                    if (sym->st_shndx != 0 && sym->st_value != 0) {
+                        // Symbol defined in this ELF
+                        *reloc_addr = base_addr + sym->st_value;
+                    } else if (strtab && sym->st_name != 0) {
+                        // External symbol - need to resolve from other libraries
+                        const char *sym_name = strtab + sym->st_name;
+                        
+                        // Try to resolve from loaded libraries
+                        // Note: This requires elf_loader_resolve_symbol to be available
+                        extern uint64_t elf_loader_resolve_symbol(const char *);
+                        uint64_t sym_addr = elf_loader_resolve_symbol(sym_name);
+                        
+                        if (sym_addr != 0) {
+                            *reloc_addr = sym_addr;
+                        } else {
+                            logger_warn("Could not resolve external symbol '%s', setting to 0\n", sym_name);
+                            *reloc_addr = 0;
+                        }
+                    } else {
+                        logger_error("Invalid symbol for relocation\n");
+                        return ELF_ERROR_RELOCATION_FAILED;
+                    }
                 } else {
                     logger_error("Symbol index %llu not found for relocation type %llu\n", sym_idx, type);
                     return ELF_ERROR_RELOCATION_FAILED;
@@ -211,6 +234,8 @@ elf_process_dynamic(const elf64_ehdr_t *ehdr, uint64_t base_addr, uint64_t load_
     const elf64_dyn_t *dyn = (const elf64_dyn_t *) (elf_base + dyn_phdr->p_offset);
     const elf64_rela_t *rela = NULL;
     size_t rela_sz = 0;
+    const elf64_rela_t *jmprel = NULL;
+    size_t pltrelsz = 0;
     const elf64_sym_t *symtab = NULL;
     const char *strtab = NULL;
 
@@ -227,6 +252,14 @@ elf_process_dynamic(const elf64_ehdr_t *ehdr, uint64_t base_addr, uint64_t load_
             case DT_RELASZ:
                 rela_sz = dyn[i].d_un.d_val;
                 break;
+            case DT_JMPREL:
+                // PLT relocations
+                jmprel = (const elf64_rela_t *) (elf_base + dyn[i].d_un.d_ptr);
+                break;
+            case DT_PLTRELSZ:
+                // PLT relocation table size
+                pltrelsz = dyn[i].d_un.d_val;
+                break;
             case DT_SYMTAB:
                 // Treat d_ptr as offset from elf_base
                 symtab = (const elf64_sym_t *) (elf_base + dyn[i].d_un.d_ptr);
@@ -238,11 +271,24 @@ elf_process_dynamic(const elf64_ehdr_t *ehdr, uint64_t base_addr, uint64_t load_
         }
     }
 
-    // Apply relocations if found
+    // Apply .rela.dyn relocations if found
     if (rela && rela_sz > 0) {
         size_t rela_count = rela_sz / sizeof(elf64_rela_t);
-        logger_info("Applying %zu relocations\n", rela_count);
-        return elf_apply_relocations(load_base, rela, rela_count, symtab, strtab);
+        logger_info("Applying %zu .rela.dyn relocations\n", rela_count);
+        elf_result_t result = elf_apply_relocations(load_base, rela, rela_count, symtab, strtab);
+        if (result != ELF_SUCCESS) {
+            return result;
+        }
+    }
+
+    // Apply .rela.plt relocations if found
+    if (jmprel && pltrelsz > 0) {
+        size_t jmprel_count = pltrelsz / sizeof(elf64_rela_t);
+        logger_info("Applying %zu .rela.plt relocations\n", jmprel_count);
+        elf_result_t result = elf_apply_relocations(load_base, jmprel, jmprel_count, symtab, strtab);
+        if (result != ELF_SUCCESS) {
+            return result;
+        }
     }
 
     return ELF_SUCCESS;
@@ -276,12 +322,17 @@ elf_load_executable(elf_descriptor_t *desc)
     }
 
     desc->type = ehdr->e_type;
-    desc->entry_point = ehdr->e_entry;
-
+    
     // Load segments
     // For executables, load base is typically 0 (uses absolute addresses)
     // For position-independent executables (PIE), use start_addr as base
     uint64_t load_base = (ehdr->e_type == ET_DYN) ? desc->start_addr : 0;
+    
+    // Calculate actual entry point
+    // For ET_DYN (PIE/shared objects), entry is relative to load base
+    // For ET_EXEC, entry is absolute
+    desc->entry_point = (ehdr->e_type == ET_DYN) ? 
+                        (load_base + ehdr->e_entry) : ehdr->e_entry;
     
     result = elf_load_segments(ehdr, desc->start_addr, load_base);
     if (result != ELF_SUCCESS) {
@@ -329,10 +380,12 @@ elf_load_dynamic(elf_descriptor_t *desc, uint64_t base_addr)
     }
 
     desc->type = ehdr->e_type;
-    desc->entry_point = ehdr->e_entry;
-
+    
     // Use provided base address or the file's location
     uint64_t load_base = base_addr ? base_addr : desc->start_addr;
+    
+    // Calculate actual entry point (relative to load base for ET_DYN)
+    desc->entry_point = load_base + ehdr->e_entry;
 
     // Load segments
     result = elf_load_segments(ehdr, desc->start_addr, load_base);

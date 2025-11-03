@@ -15,6 +15,8 @@
 #include "lib/t_logger.h"
 #include "lib/rand.h"
 #include "mem/t_mem.h"
+#include "lib/t_elf.h"
+#include "lib/t_elf_loader.h"
 
 #include "t_psci.h"
 #include "cfg/t_cfg.h"
@@ -433,7 +435,7 @@ t_kernel_main(uint64_t id)
     enable_interrupts();  // daifclr 2
     logger_info("After enabling interrupts\n");
 
-    dw_uart_init();
+    // dw_uart_init();
 
 
     t_run_printf_tests();
@@ -451,7 +453,7 @@ t_kernel_main(uint64_t id)
     size_t heap_size = (1 << 28);  // 1 G
     t_mem_init(heap_size);
 
-#if 1
+#if 0
     void t_mem_run_tests(void);
     void t_mem_run_stress_tests(void);
     t_mem_run_tests();
@@ -459,11 +461,52 @@ t_kernel_main(uint64_t id)
 #endif
 
 #if 1
-    // ELF 加载功能测试
-    void t_elf_run_tests(void);
-    void test_bootloader_example(void);
-    t_elf_run_tests();
-    test_bootloader_example();
+    const uint64_t table_addr = 0x7F000000;
+    // Initialize the ELF loader
+    size_t loaded = elf_loader_init(table_addr);
+    if (loaded == 0) {
+        logger_error("Failed to load any programs\n");
+        return;
+    }
+    logger_info("Successfully loaded %zu programs\n", loaded);
+    elf_loader_list_programs();
+
+    logger_info("\n=== User Program Execution Test ===\n");
+    
+    // 查找 hello.elf 的描述符
+    const elf_descriptor_t *hello_desc = elf_loader_get_program("hello.elf");
+    if (!hello_desc) {
+        logger_error("Cannot find hello.elf descriptor\n");
+        return;
+    }
+    
+    // 临时方案：在内核空间直接调用 main（用于测试动态链接）
+    // 注意：这不是正确的进程执行方式！
+    logger_info("Temporary test: Calling main() in kernel space\n");
+    logger_warn("WARNING: This is for testing only!\n");
+    logger_warn("TODO: Implement proper user-space process execution (EL0)\n");
+    
+    uint64_t main_addr = 0;
+    elf_result_t result = elf_find_symbol(hello_desc, "main", &main_addr);
+    if (result != ELF_SUCCESS) {
+        logger_error("Cannot find 'main' symbol (need --export-dynamic)\n");
+        logger_info("Skipping user program test\n");
+    } else {
+        logger_info("Found main() at 0x%lx\n", main_addr);
+        
+        typedef int (*main_func_t)(int argc, char **argv, char **envp);
+        main_func_t main_func = (main_func_t)main_addr;
+        
+        int ret = main_func(0, NULL, NULL);
+        logger_info("main() returned: %d\n", ret);
+    }
+    
+    // 原来的方式（通过 entry point 和 libc 初始化）
+    // if (elf_loader_execute("hello.elf")) {
+    //     logger_info("Hello process completed\n");
+    // } else {
+    //     logger_error("Failed to start hello process\n");
+    // }
 #endif
 
 #if 0

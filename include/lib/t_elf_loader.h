@@ -106,6 +106,17 @@ bool elf_loader_execute(const char *name);
 void elf_loader_list_programs(void);
 
 /**
+ * Resolve a symbol from loaded libraries
+ * 
+ * Searches all loaded libraries for the specified symbol.
+ * Used during dynamic linking to resolve external symbols.
+ * 
+ * @param symbol_name Name of the symbol to resolve
+ * @return Address of the symbol if found, 0 otherwise
+ */
+uint64_t elf_loader_resolve_symbol(const char *symbol_name);
+
+/**
  * Example kernel integration function
  * 
  * Demonstrates how to integrate the ELF loader into kernel initialization.

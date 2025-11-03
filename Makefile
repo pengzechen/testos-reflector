@@ -90,14 +90,27 @@ uboot: uimg
 clean:
 	rm -rf $(BUILD_DIR)
 
+# 编译用户程序
+build-app:
+	@echo "编译用户程序..."
+	cd userapp && ./build.sh
+
+# 烧录（包含用户程序）
+flash: $(BIN_TARGET)
+	@echo "烧录内核和用户程序到开发板..."
+	bash tools/orangepi5/make_flash.sh
+
 # 显示帮助
 help:
 	@echo "Available targets:"
-	@echo "  all       - Build the kernel binary"
-	@echo "  clean     - Remove build files"
-	@echo "  disasm    - Generate disassembly"
-	@echo "  qemu      - Run kernel in QEMU"
-	@echo "  qemu-debug- Run kernel in QEMU with GDB server"
-	@echo "  help      - Show this help message"
+	@echo "  all        - Build the kernel binary"
+	@echo "  clean      - Remove build files"
+	@echo "  disasm     - Generate disassembly"
+	@echo "  qemu       - Run kernel in QEMU"
+	@echo "  qemu-debug - Run kernel in QEMU with GDB server"
+	@echo "  uimg       - Generate U-Boot image"
+	@echo "  build-app  - Build user application"
+	@echo "  flash      - Flash kernel and apps to board"
+	@echo "  help       - Show this help message"
 
-.PHONY: all clean disasm qemu qemu-debug help
+.PHONY: all clean disasm qemu qemu-debug help build-app flash
