@@ -9,31 +9,24 @@ ext4load mmc 1:1  0x400000 kernel.uimg
 # The kernel's ELF loader will automatically resolve dependencies
 
 # --- Standard musl libraries (≥ 0x80000000 / 2GB) ---
+# Note: In musl, libm/libpthread/libdl/librt are all integrated into libc.so
+# We only need to load libc.so once, but register multiple names in ELF table
+
 # Load libc.so (musl C library) - base library for all programs
 ext4load mmc 1:1  0x80000000 libc.so
 setenv libc_size ${filesize}
 
-# Load libm.so (math library) - may be needed by libc or programs
-ext4load mmc 1:1  0x80100000 libm.so
+# Set the same size for all library aliases (they all point to the same libc.so)
 setenv libm_size ${filesize}
-
-# Load libpthread.so (POSIX threads) - threading support
-ext4load mmc 1:1  0x80200000 libpthread.so
 setenv libpthread_size ${filesize}
-
-# Load libdl.so (dynamic linking) - dynamic loading support
-ext4load mmc 1:1  0x80300000 libdl.so
 setenv libdl_size ${filesize}
-
-# Load librt.so (real-time extensions) - POSIX real-time
-ext4load mmc 1:1  0x80400000 librt.so
 setenv librt_size ${filesize}
 
 # --- User programs area (≥ 0x81000000) ---
 # Reserve 0x81000000 - 0x8FFFFFFF for user executables
-# User can add their programs here, e.g.:
-# ext4load mmc 1:1  0x81000000 my_app
-# setenv myapp_size ${filesize}
+# Load hello.elf user application
+ext4load mmc 1:1  0x81000000 hello.elf
+setenv hello_size ${filesize}
 
 # --- ELF Table Setup (0x7F000000 - just below 2GB boundary) ---
 # Create bootloader_elf_table_t structure:
@@ -54,7 +47,7 @@ setenv librt_size ${filesize}
 # Write ELF table header
 mw.l 0x7F000000 0x454C4654   # magic: "ELFT"
 mw.l 0x7F000004 0x00000001   # version: 1
-mw.l 0x7F000008 0x00000005   # count: 5 libraries (adjust when adding programs)
+mw.l 0x7F000008 0x00000006   # count: 6 (5 libraries + 1 executable)
 mw.l 0x7F00000C 0x00000000   # reserved: 0
 
 # Entry 0: libc.so (library, flags=1)
@@ -83,7 +76,7 @@ mw 0x7F00006C 0x2E 1         # '.'
 mw 0x7F00006D 0x73 1         # 's'
 mw 0x7F00006E 0x6F 1         # 'o'
 mw 0x7F00006F 0x00 1         # null terminator
-mw.q 0x7F0000A8 0x80100000 1     # start_addr: 0x80100000
+mw.q 0x7F0000A8 0x80000000 1     # start_addr: 0x80000000 (same as libc.so)
 mw.q 0x7F0000B0 ${libm_size} 1   # size
 mw.l 0x7F0000B8 0x00000001 1     # flags: library
 mw.l 0x7F0000BC 0x00000000 1     # reserved
@@ -104,7 +97,7 @@ mw 0x7F0000CA 0x2E 1         # '.'
 mw 0x7F0000CB 0x73 1         # 's'
 mw 0x7F0000CC 0x6F 1         # 'o'
 mw 0x7F0000CD 0x00 1         # null terminator
-mw.q 0x7F000100 0x80200000 1     # start_addr: 0x80200000
+mw.q 0x7F000100 0x80000000 1     # start_addr: 0x80000000 (same as libc.so)
 mw.q 0x7F000108 ${libpthread_size} 1  # size
 mw.l 0x7F000110 0x00000001 1     # flags: library
 mw.l 0x7F000114 0x00000000 1     # reserved
@@ -120,7 +113,7 @@ mw 0x7F00011D 0x2E 1         # '.'
 mw 0x7F00011E 0x73 1         # 's'
 mw 0x7F00011F 0x6F 1         # 'o'
 mw 0x7F000120 0x00 1         # null terminator
-mw.q 0x7F000158 0x80300000 1     # start_addr: 0x80300000
+mw.q 0x7F000158 0x80000000 1     # start_addr: 0x80000000 (same as libc.so)
 mw.q 0x7F000160 ${libdl_size} 1  # size
 mw.l 0x7F000168 0x00000001 1     # flags: library
 mw.l 0x7F00016C 0x00000000 1     # reserved
@@ -136,12 +129,29 @@ mw 0x7F000175 0x2E 1         # '.'
 mw 0x7F000176 0x73 1         # 's'
 mw 0x7F000177 0x6F 1         # 'o'
 mw 0x7F000178 0x00 1         # null terminator
-mw.q 0x7F0001B0 0x80400000 1     # start_addr: 0x80400000
+mw.q 0x7F0001B0 0x80000000 1     # start_addr: 0x80000000 (same as libc.so)
 mw.q 0x7F0001B8 ${librt_size} 1  # size
 mw.l 0x7F0001C0 0x00000001 1     # flags: library
 mw.l 0x7F0001C4 0x00000000 1     # reserved
 
-# Add more entries here for user programs:
+# Entry 5: hello.elf (executable, flags=0)
+# Offset: 0x7F0001C8
+mw 0x7F0001C8 0x68 1         # 'h'
+mw 0x7F0001C9 0x65 1         # 'e'
+mw 0x7F0001CA 0x6C 1         # 'l'
+mw 0x7F0001CB 0x6C 1         # 'l'
+mw 0x7F0001CC 0x6F 1         # 'o'
+mw 0x7F0001CD 0x2E 1         # '.'
+mw 0x7F0001CE 0x65 1         # 'e'
+mw 0x7F0001CF 0x6C 1         # 'l'
+mw 0x7F0001D0 0x66 1         # 'f'
+mw 0x7F0001D1 0x00 1         # null terminator
+mw.q 0x7F000208 0x81000000 1     # start_addr: 0x81000000
+mw.q 0x7F000210 ${hello_size} 1  # size
+mw.l 0x7F000218 0x00000000 1     # flags: executable (0)
+mw.l 0x7F00021C 0x00000000 1     # reserved
+
+# Add more user programs here:
 # Entry N: my_program (executable, flags=0)
 # Remember to increment count in header (0x7F000008)
 
