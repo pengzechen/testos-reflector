@@ -19,7 +19,9 @@
 #define SYS_getitimer       102  // get interval timer
 #define SYS_rt_sigprocmask  135  // change signal mask
 #define SYS_brk             214  // change data segment size
+
 #define SYS_mmap            222  // map memory
+#define SYS_munmap          215  // unmap memory (free mmap region)
 #define SYS_mprotect        226  // change memory protection
 
 /* Standard file descriptors */

@@ -8,6 +8,17 @@
 #include "dev/t_dw_uart.h"
 #include "mem/t_mem.h"
 
+// 定义用户程序的堆区域
+// 为每个 ELF 预留独立的堆空间
+#define HELLO_HEAP_START  0x81100000UL  // hello.elf 的堆起始地址（紧跟代码段后）
+#define HELLO_HEAP_END    0x82000000UL  // 堆结束地址（下一个 ELF 前）
+
+#define SIMPLE_HEAP_START 0x82100000UL  // simple.elf 的堆起始地址
+#define SIMPLE_HEAP_END   0x83000000UL
+
+static uint64_t hello_brk_current = HELLO_HEAP_START;
+static uint64_t simple_brk_current = SIMPLE_HEAP_START;
+
 /**
  * sys_write - write to file descriptor
  * @fd: file descriptor (0=stdin, 1=stdout, 2=stderr)
@@ -103,17 +114,6 @@ static int64_t sys_read(int fd, char *buf, size_t count)
 /**
  * sys_brk - change data segment size (for malloc)
  */
-
-// 定义用户程序的堆区域
-// 为每个 ELF 预留独立的堆空间
-#define HELLO_HEAP_START  0x81100000UL  // hello.elf 的堆起始地址（紧跟代码段后）
-#define HELLO_HEAP_END    0x82000000UL  // 堆结束地址（下一个 ELF 前）
-#define SIMPLE_HEAP_START 0x82100000UL  // simple.elf 的堆起始地址
-#define SIMPLE_HEAP_END   0x83000000UL
-
-static uint64_t hello_brk_current = HELLO_HEAP_START;
-// static uint64_t simple_brk_current = SIMPLE_HEAP_START;
-
 static int64_t sys_brk(void *addr)
 {
     uint64_t requested_addr = (uint64_t)addr;
@@ -139,7 +139,7 @@ static int64_t sys_brk(void *addr)
         return *current_brk; // 返回旧值表示失败
     }
     
-    logger_info("[SYSCALL] sys_brk: %p -> %p (size: %lu KB)\n",
+    logger_info("[SYSCALL] sys_brk: %p -> %p (size: %d KB)\n",
                 (void*)*current_brk, (void*)requested_addr,
                 (requested_addr - heap_start) / 1024);
     
@@ -210,26 +210,6 @@ static int64_t sys_getitimer(int which, void *curr_value)
     return 0;
 }
 
-/**
- * sys_mmap - map memory into address space
- * 
- * mmap 参数：
- *   addr   - 建议的映射地址（NULL = 让内核选择）
- *   length - 映射长度
- *   prot   - 保护标志（PROT_READ|PROT_WRITE|PROT_EXEC）
- */
-
-/*
- * sys_mmap - map memory into address space
- * 
- * mmap 参数：
- *   addr   - 建议的映射地址（NULL = 让内核选择）
- *   length - 映射长度
- *   prot   - 保护标志（PROT_READ|PROT_WRITE|PROT_EXEC）
- *   flags  - 映射标志（MAP_PRIVATE|MAP_ANONYMOUS 等）
- *   fd     - 文件描述符（MAP_ANONYMOUS 时忽略）
- *   offset - 文件偏移（MAP_ANONYMOUS 时忽略）
- */
 
 // mmap 标志定义
 #define PROT_READ       0x1
@@ -238,15 +218,17 @@ static int64_t sys_getitimer(int which, void *curr_value)
 #define MAP_PRIVATE     0x02
 #define MAP_ANONYMOUS   0x20
 #define MAP_FAILED      ((void*)-1)
+#define EINVAL 22 
 
-// 为 mmap 分配的内存区域（在堆后面）
-#define HELLO_MMAP_START  0x82000000UL
-#define HELLO_MMAP_END    0x84000000UL
-#define SIMPLE_MMAP_START 0x83000000UL
-#define SIMPLE_MMAP_END   0x85000000UL
 
-static uint64_t hello_mmap_current = HELLO_MMAP_START;
-// static uint64_t simple_mmap_current = SIMPLE_MMAP_START;
+// 简单的 mmap 区域释放标记（仅支持最近一次分配的回退，适合 musl 的大块释放）
+static int64_t sys_munmap(void *addr, size_t length) {
+    logger_info("[SYSCALL] sys_munmap: addr=%p, length=%zu (noop)\n", addr, length);
+    // 幂等假释放，不做任何实际内存回退，兼容 musl free 行为
+    return 0;
+}
+
+
 
 static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
                        int fd, int64_t offset)
@@ -258,79 +240,27 @@ static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
     (void)fd;
     (void)offset;
     
-    // 关键修改：mmap 从当前 brk 位置开始分配
-    // 这样 musl libc 的内存管理可以正常工作
-    uint64_t heap_end = HELLO_HEAP_END;
-    uint64_t mmap_end = HELLO_MMAP_END;
-    
-    // 简化实现：只支持匿名映射
+    // mmap 直接用 brk 机制分配，和 sys_brk 共享同一堆区
     if (!(flags & MAP_ANONYMOUS)) {
         logger_error("[SYSCALL] sys_mmap: only MAP_ANONYMOUS supported\n");
         return (int64_t)MAP_FAILED;
     }
-    
-    // 检查 length 是否为 0
+
     if (length == 0) {
         logger_warn("[SYSCALL] sys_mmap: length=0, allocating one page (4KB)\n");
-        length = 4096;  // 至少分配一个页面
+        length = 4096;
     }
-    
-    // 对齐到页边界（4KB）
+
     size_t aligned_length = (length + 0xFFF) & ~0xFFF;
-    
-    // 分配策略：
-    // musl libc 可能会请求在堆区域内的特定地址，我们需要检查是否冲突
-    uint64_t heap_start = HELLO_HEAP_START;
-    uint64_t alloc_addr;
-    
-    if (addr != NULL && (uint64_t)addr >= heap_start && (uint64_t)addr < mmap_end) {
-        uint64_t requested_addr = (uint64_t)addr;
-        
-        // 检查请求的地址是否与当前 brk 冲突
-        if (requested_addr + aligned_length <= hello_brk_current) {
-            // 请求的区域完全在 brk 之前，这可能会覆盖已分配的堆内存
-            // 这种情况下，musl 可能认为这块内存是空闲的
-            // 为了安全，我们应该从 brk 之后分配
-            logger_warn("[SYSCALL] sys_mmap: hint %p conflicts with brk (%p), ignoring\n",
-                        addr, (void*)hello_brk_current);
-            goto alloc_from_current;
-        } else if (requested_addr < hello_brk_current && requested_addr + aligned_length > hello_brk_current) {
-            // 请求的区域跨越 brk，部分重叠
-            logger_warn("[SYSCALL] sys_mmap: hint %p partially overlaps brk (%p), ignoring\n",
-                        addr, (void*)hello_brk_current);
-            goto alloc_from_current;
-        } else {
-            // 请求的地址在 brk 之后，可以使用
-            alloc_addr = requested_addr;
-            logger_info("[SYSCALL] sys_mmap: using hint address %p (safe, after brk=%p)\n",
-                        addr, (void*)hello_brk_current);
-        }
-    } else {
-alloc_from_current:
-        // 从当前 mmap 位置分配，如果 mmap_current 还未初始化，则从 brk 后面开始
-        if (hello_mmap_current < hello_brk_current) {
-            hello_mmap_current = hello_brk_current;
-        }
-        alloc_addr = hello_mmap_current;
-        logger_info("[SYSCALL] sys_mmap: allocating from current position %p (brk=%p)\n",
-                    (void*)alloc_addr, (void*)hello_brk_current);
-    }
-    
-    // 检查是否有足够空间
-    if (alloc_addr + aligned_length > mmap_end) {
+    uint64_t heap_end = HELLO_HEAP_END;
+    if (hello_brk_current + aligned_length > heap_end) {
         logger_error("[SYSCALL] sys_mmap: out of memory (requested %zu bytes)\n", length);
         return (int64_t)MAP_FAILED;
     }
-    
-    // 清零内存（MAP_ANONYMOUS 要求）
-    memset((void*)alloc_addr, 0, aligned_length);
-    
-    // 更新当前位置
-    hello_mmap_current = alloc_addr + aligned_length;
-    
-    logger_info("[SYSCALL] sys_mmap: allocated %p (aligned %zu bytes)\n",
-                (void*)alloc_addr, aligned_length);
-    
+    void *alloc_addr = (void*)hello_brk_current;
+    memset(alloc_addr, 0, aligned_length);
+    hello_brk_current += aligned_length;
+    logger_info("[SYSCALL] sys_mmap: allocated %p (aligned %zu bytes)\n", alloc_addr, aligned_length);
     return (int64_t)alloc_addr;
 }
 
@@ -340,9 +270,6 @@ alloc_from_current:
 uint64_t handle_syscall(uint64_t syscall_num, uint64_t arg0, uint64_t arg1, 
                         uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
 {
-    (void)arg3;
-    (void)arg4;
-    (void)arg5;
 
     int64_t ret = 0;
     
@@ -373,6 +300,11 @@ uint64_t handle_syscall(uint64_t syscall_num, uint64_t arg0, uint64_t arg1,
         case SYS_mmap:
             ret = sys_mmap((void *)arg0, (size_t)arg1, (int)arg2, 
                           (int)arg3, (int)arg4, (int64_t)arg5);
+            break;
+
+
+        case SYS_munmap:
+            ret = sys_munmap((void *)arg0, (size_t)arg1);
             break;
 
         case SYS_rt_sigprocmask:

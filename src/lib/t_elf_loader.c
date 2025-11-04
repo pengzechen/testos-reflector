@@ -337,7 +337,7 @@ elf_loader_execute(const char *name)
 void
 elf_loader_list_programs(void)
 {
-    logger_info("\n=== Loaded Programs ===\n");
+    logger_info("=== Loaded Programs ===\n");
     logger_info("Total: %zu\n\n", num_loaded_programs);
 
     for (size_t i = 0; i < num_loaded_programs; i++) {
