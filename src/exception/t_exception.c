@@ -6,6 +6,8 @@
 #include "cfg/t_cfg.h"
 #include "dev/t_timer.h"
 #include "lib/t_logger.h"
+#include "lib/dbg.h"
+#include "dev/t_dw_uart.h"
 
 irq_handler_t g_handler_vec[512] = {0};
 
@@ -18,15 +20,32 @@ irq_install(int vector, void (*h)(uint64_t *))
     g_handler_vec[vector] = h;
 }
 
-static inline uint64_t read_far_el1(void) {
+static inline uint64_t
+read_far_el1(void)
+{
     uint64_t val;
-    __asm__ volatile (
-        "mrs %0, far_el1"   // 将 FAR_EL1 寄存器的值读到 val
-        : "=r"(val)         // 输出操作数
-        :                   // 无输入操作数
-        :                   // 无破坏的寄存器
+    __asm__ volatile("mrs %0, far_el1"  // 将 FAR_EL1 寄存器的值读到 val
+                     : "=r"(val)        // 输出操作数
+                     :                  // 无输入操作数
+                     :                  // 无破坏的寄存器
     );
     return val;
+}
+
+void
+regs_dump(trap_frame_t *tf)
+{
+    logger("This is handle_sync_exception: \n");
+    for (int i = 0; i < 31; i++) {
+        uint64_t value = tf->r[i];
+        logger("General-purpose register: %d, value: %x\n", i, value);
+    }
+
+    uint64_t elr_el1_value = tf->elr;
+    uint64_t usp_value     = tf->usp;
+    uint64_t spsr_value    = tf->spsr;
+
+    logger("usp: %x, elr: %x, spsr: %x\n", usp_value, elr_el1_value, spsr_value);
 }
 
 void
@@ -43,15 +62,15 @@ handle_sync_exception(uint64_t *stack_pointer)
         // 系统调用处理
         // x8 = 系统调用号, x0-x5 = 参数
         uint64_t syscall_num = el1_ctx->r[8];
-        uint64_t arg0 = el1_ctx->r[0];
-        uint64_t arg1 = el1_ctx->r[1];
-        uint64_t arg2 = el1_ctx->r[2];
-        uint64_t arg3 = el1_ctx->r[3];
-        uint64_t arg4 = el1_ctx->r[4];
-        uint64_t arg5 = el1_ctx->r[5];
+        uint64_t arg0        = el1_ctx->r[0];
+        uint64_t arg1        = el1_ctx->r[1];
+        uint64_t arg2        = el1_ctx->r[2];
+        uint64_t arg3        = el1_ctx->r[3];
+        uint64_t arg4        = el1_ctx->r[4];
+        uint64_t arg5        = el1_ctx->r[5];
 
         // uint64_t sp_before = el1_ctx->usp;
-        // logger("  [SYSCALL_DEBUG] Before: ELR=0x%lx, x30=0x%lx, SP=0x%lx\n", 
+        // logger("  [SYSCALL_DEBUG] Before: ELR=0x%lx, x30=0x%lx, SP=0x%lx\n",
         //        el1_ctx->elr, el1_ctx->r[30], sp_before);
 
         // 调用系统调用处理函数
@@ -67,9 +86,9 @@ handle_sync_exception(uint64_t *stack_pointer)
         // el1_ctx->elr += 4;
 
         // uint64_t sp_after = el1_ctx->usp;
-        // logger("  [SYSCALL_DEBUG] After: ELR=0x%lx, x30=0x%lx, SP=0x%lx\n", 
+        // logger("  [SYSCALL_DEBUG] After: ELR=0x%lx, x30=0x%lx, SP=0x%lx\n",
         //        el1_ctx->elr, el1_ctx->r[30], sp_after);
-        
+
         // if (sp_before != sp_after) {
         //     logger_warn("  [SYSCALL_DEBUG] WARNING: Stack pointer changed!\n");
         // }
@@ -77,22 +96,23 @@ handle_sync_exception(uint64_t *stack_pointer)
         return;
     }
 
+    if (ec == 0x3c) {
+        logger_warn("Caught brk instruction at ELR=0x%lx\n", el1_ctx->elr);
+        
+        regs_dump(el1_ctx); 
+        
+        dw_uart_getchar();
+        
+        restore((void*)el1_ctx->elr);
+        el1_ctx->elr += 4;  // 跳过 brk 指令
+        return;
+    }
     // 其他异常的处理
     logger("el1 esr: %x\n", el1_esr);
     logger("ec: %x\n", ec);
     logger("far_el1: %x\n", read_far_el1());
 
-    logger("This is handle_sync_exception: \n");
-    for (int i = 0; i < 31; i++) {
-        uint64_t value = el1_ctx->r[i];
-        logger("General-purpose register: %d, value: %x\n", i, value);
-    }
-
-    uint64_t elr_el1_value = el1_ctx->elr;
-    uint64_t usp_value     = el1_ctx->usp;
-    uint64_t spsr_value    = el1_ctx->spsr;
-
-    logger("usp: %x, elr: %x, spsr: %x\n", usp_value, elr_el1_value, spsr_value);
+    regs_dump(el1_ctx); 
 
     logger_warn("wfi\n");
     while (1)
