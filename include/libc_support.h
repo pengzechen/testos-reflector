@@ -13,7 +13,8 @@ typedef int (*main_func_t)(int argc, char **argv, char **envp);
 /**
  * Initialize TLS (Thread Local Storage) for libc
  */
-void __testos_init_tls(void);
+void
+__testos_init_tls(void);
 
 /**
  * Execute a libc-dependent program
@@ -22,11 +23,13 @@ void __testos_init_tls(void);
  * @param main_func Pointer to main function
  * @return Return value from main()
  */
-int execute_libc_program(uint64_t entry_point, main_func_t main_func);
+int
+execute_libc_program(uint64_t entry_point, main_func_t main_func);
 
 /**
  * Get errno location (for libc)
  */
-int *__errno_location(void);
+int *
+__errno_location(void);
 
 #endif /* LIBC_SUPPORT_H */

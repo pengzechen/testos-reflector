@@ -28,11 +28,11 @@
 #define ELFOSABI_SYSV 0  // UNIX System V ABI
 
 /* ELF Type */
-#define ET_NONE   0  // No file type
-#define ET_REL    1  // Relocatable file
-#define ET_EXEC   2  // Executable file
-#define ET_DYN    3  // Shared object file
-#define ET_CORE   4  // Core file
+#define ET_NONE 0  // No file type
+#define ET_REL  1  // Relocatable file
+#define ET_EXEC 2  // Executable file
+#define ET_DYN  3  // Shared object file
+#define ET_CORE 4  // Core file
 
 /* ELF Machine */
 #define EM_AARCH64 183  // ARM 64-bit architecture
@@ -83,7 +83,8 @@
 #define DT_FINI     13  // Address of termination function
 #define DT_SONAME   14  // Name of shared object
 #define DT_RPATH    15  // Library search path (deprecated)
-#define DT_SYMBOLIC 16  // Alert linker to search this shared object before the executable for symbols
+#define DT_SYMBOLIC                                                                                \
+    16  // Alert linker to search this shared object before the executable for symbols
 #define DT_REL      17  // Address of Rel relocation table
 #define DT_RELSZ    18  // Size of Rel relocation table
 #define DT_RELENT   19  // Size of one Rel entry
@@ -94,19 +95,19 @@
 #define DT_BIND_NOW 24  // Process relocations at load time
 
 /* Relocation Types for AArch64 */
-#define R_AARCH64_NONE                  0
-#define R_AARCH64_ABS64                 257
-#define R_AARCH64_ABS32                 258
-#define R_AARCH64_ABS16                 259
-#define R_AARCH64_PREL64                260
-#define R_AARCH64_PREL32                261
-#define R_AARCH64_PREL16                262
-#define R_AARCH64_RELATIVE              1027
-#define R_AARCH64_GLOB_DAT              1025
-#define R_AARCH64_JUMP_SLOT             1026
-#define R_AARCH64_TLS_DTPREL64          1028
-#define R_AARCH64_TLS_DTPMOD64          1029
-#define R_AARCH64_TLS_TPREL64           1030
+#define R_AARCH64_NONE         0
+#define R_AARCH64_ABS64        257
+#define R_AARCH64_ABS32        258
+#define R_AARCH64_ABS16        259
+#define R_AARCH64_PREL64       260
+#define R_AARCH64_PREL32       261
+#define R_AARCH64_PREL16       262
+#define R_AARCH64_RELATIVE     1027
+#define R_AARCH64_GLOB_DAT     1025
+#define R_AARCH64_JUMP_SLOT    1026
+#define R_AARCH64_TLS_DTPREL64 1028
+#define R_AARCH64_TLS_DTPMOD64 1029
+#define R_AARCH64_TLS_TPREL64  1030
 
 /* Symbol Binding */
 #define STB_LOCAL  0
@@ -121,25 +122,27 @@
 #define STT_FILE    4
 
 /* ELF64 Header */
-typedef struct {
-    uint8_t  e_ident[16];    // ELF identification
-    uint16_t e_type;         // Object file type
-    uint16_t e_machine;      // Machine type
-    uint32_t e_version;      // Object file version
-    uint64_t e_entry;        // Entry point address
-    uint64_t e_phoff;        // Program header offset
-    uint64_t e_shoff;        // Section header offset
-    uint32_t e_flags;        // Processor-specific flags
-    uint16_t e_ehsize;       // ELF header size
-    uint16_t e_phentsize;    // Program header entry size
-    uint16_t e_phnum;        // Number of program header entries
-    uint16_t e_shentsize;    // Section header entry size
-    uint16_t e_shnum;        // Number of section header entries
-    uint16_t e_shstrndx;     // Section name string table index
+typedef struct
+{
+    uint8_t  e_ident[16];  // ELF identification
+    uint16_t e_type;       // Object file type
+    uint16_t e_machine;    // Machine type
+    uint32_t e_version;    // Object file version
+    uint64_t e_entry;      // Entry point address
+    uint64_t e_phoff;      // Program header offset
+    uint64_t e_shoff;      // Section header offset
+    uint32_t e_flags;      // Processor-specific flags
+    uint16_t e_ehsize;     // ELF header size
+    uint16_t e_phentsize;  // Program header entry size
+    uint16_t e_phnum;      // Number of program header entries
+    uint16_t e_shentsize;  // Section header entry size
+    uint16_t e_shnum;      // Number of section header entries
+    uint16_t e_shstrndx;   // Section name string table index
 } __attribute__((packed)) elf64_ehdr_t;
 
 /* ELF64 Program Header */
-typedef struct {
+typedef struct
+{
     uint32_t p_type;    // Segment type
     uint32_t p_flags;   // Segment flags
     uint64_t p_offset;  // Segment file offset
@@ -151,7 +154,8 @@ typedef struct {
 } __attribute__((packed)) elf64_phdr_t;
 
 /* ELF64 Section Header */
-typedef struct {
+typedef struct
+{
     uint32_t sh_name;       // Section name (string table index)
     uint32_t sh_type;       // Section type
     uint64_t sh_flags;      // Section flags
@@ -165,7 +169,8 @@ typedef struct {
 } __attribute__((packed)) elf64_shdr_t;
 
 /* ELF64 Symbol Table Entry */
-typedef struct {
+typedef struct
+{
     uint32_t st_name;   // Symbol name (string table index)
     uint8_t  st_info;   // Symbol type and binding
     uint8_t  st_other;  // Symbol visibility
@@ -175,21 +180,24 @@ typedef struct {
 } __attribute__((packed)) elf64_sym_t;
 
 /* ELF64 Relocation Entry */
-typedef struct {
+typedef struct
+{
     uint64_t r_offset;  // Address
     uint64_t r_info;    // Relocation type and symbol index
 } __attribute__((packed)) elf64_rel_t;
 
 /* ELF64 Relocation Entry with Addend */
-typedef struct {
+typedef struct
+{
     uint64_t r_offset;  // Address
     uint64_t r_info;    // Relocation type and symbol index
     int64_t  r_addend;  // Addend
 } __attribute__((packed)) elf64_rela_t;
 
 /* ELF64 Dynamic Entry */
-typedef struct {
-    int64_t  d_tag;  // Dynamic entry type
+typedef struct
+{
+    int64_t d_tag;  // Dynamic entry type
     union {
         uint64_t d_val;  // Integer value
         uint64_t d_ptr;  // Address value
@@ -197,17 +205,19 @@ typedef struct {
 } __attribute__((packed)) elf64_dyn_t;
 
 /* ELF Descriptor - describes an ELF file loaded in memory */
-typedef struct {
-    char     name[64];       // ELF file name
-    uint64_t start_addr;     // Start address in memory
-    uint64_t size;           // Size in bytes
-    uint64_t entry_point;    // Entry point address
-    uint16_t type;           // ELF type (ET_EXEC, ET_DYN, etc.)
-    bool     is_loaded;      // Whether the ELF is loaded
+typedef struct
+{
+    char     name[64];     // ELF file name
+    uint64_t start_addr;   // Start address in memory
+    uint64_t size;         // Size in bytes
+    uint64_t entry_point;  // Entry point address
+    uint16_t type;         // ELF type (ET_EXEC, ET_DYN, etc.)
+    bool     is_loaded;    // Whether the ELF is loaded
 } elf_descriptor_t;
 
 /* ELF Load Result */
-typedef enum {
+typedef enum
+{
     ELF_SUCCESS = 0,
     ELF_ERROR_INVALID_MAGIC,
     ELF_ERROR_INVALID_CLASS,
@@ -223,28 +233,30 @@ typedef enum {
 } elf_result_t;
 
 /* Macros for symbol info */
-#define ELF64_ST_BIND(i)   ((i) >> 4)
-#define ELF64_ST_TYPE(i)   ((i) & 0xf)
-#define ELF64_ST_INFO(b,t) (((b) << 4) + ((t) & 0xf))
+#define ELF64_ST_BIND(i)    ((i) >> 4)
+#define ELF64_ST_TYPE(i)    ((i) & 0xf)
+#define ELF64_ST_INFO(b, t) (((b) << 4) + ((t) & 0xf))
 
 /* Macros for relocation info */
 #define ELF64_R_SYM(i)     ((i) >> 32)
 #define ELF64_R_TYPE(i)    ((i) & 0xffffffffL)
-#define ELF64_R_INFO(s,t)  (((s) << 32) + ((t) & 0xffffffffL))
+#define ELF64_R_INFO(s, t) (((s) << 32) + ((t) & 0xffffffffL))
 
 /**
  * Validate an ELF header
  * @param ehdr Pointer to ELF header
  * @return ELF_SUCCESS if valid, error code otherwise
  */
-elf_result_t elf_validate_header(const elf64_ehdr_t *ehdr);
+elf_result_t
+elf_validate_header(const elf64_ehdr_t *ehdr);
 
 /**
  * Load an executable ELF file
  * @param desc ELF descriptor with name, start_addr, and size filled in
  * @return ELF_SUCCESS if successful, error code otherwise
  */
-elf_result_t elf_load_executable(elf_descriptor_t *desc);
+elf_result_t
+elf_load_executable(elf_descriptor_t *desc);
 
 /**
  * Load a dynamic library ELF file
@@ -252,7 +264,8 @@ elf_result_t elf_load_executable(elf_descriptor_t *desc);
  * @param base_addr Base address to load the library (0 for auto-allocation)
  * @return ELF_SUCCESS if successful, error code otherwise
  */
-elf_result_t elf_load_dynamic(elf_descriptor_t *desc, uint64_t base_addr);
+elf_result_t
+elf_load_dynamic(elf_descriptor_t *desc, uint64_t base_addr);
 
 /**
  * Find a symbol in a loaded ELF
@@ -261,9 +274,8 @@ elf_result_t elf_load_dynamic(elf_descriptor_t *desc, uint64_t base_addr);
  * @param symbol_addr Output: address of the symbol
  * @return ELF_SUCCESS if found, error code otherwise
  */
-elf_result_t elf_find_symbol(const elf_descriptor_t *desc, 
-                              const char *symbol_name,
-                              uint64_t *symbol_addr);
+elf_result_t
+elf_find_symbol(const elf_descriptor_t *desc, const char *symbol_name, uint64_t *symbol_addr);
 
 /**
  * Get list of library dependencies from an ELF file (DT_NEEDED entries)
@@ -272,25 +284,29 @@ elf_result_t elf_find_symbol(const elf_descriptor_t *desc,
  * @param max_deps Maximum number of dependencies to return
  * @return Number of dependencies found, or 0 if none
  */
-size_t elf_get_dependencies(uint64_t base_addr, char deps[][64], size_t max_deps);
+size_t
+elf_get_dependencies(uint64_t base_addr, char deps[][64], size_t max_deps);
 
 /**
  * Get human-readable error message for an error code
  * @param result Error code
  * @return Error message string
  */
-const char *elf_error_string(elf_result_t result);
+const char *
+elf_error_string(elf_result_t result);
 
 /**
  * Dump ELF descriptor information (for debugging)
  * @param desc ELF descriptor
  */
-void elf_dump_descriptor(const elf_descriptor_t *desc);
+void
+elf_dump_descriptor(const elf_descriptor_t *desc);
 
 /**
  * Dump ELF header information (for debugging)
  * @param ehdr ELF header
  */
-void elf_dump_header(const elf64_ehdr_t *ehdr);
+void
+elf_dump_header(const elf64_ehdr_t *ehdr);
 
 #endif /* T_ELF_H */

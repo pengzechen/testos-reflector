@@ -22,6 +22,7 @@
 #include "t_psci.h"
 #include "cfg/t_cfg.h"
 #include "mem/cache.h"
+#include "lib/dbg.h"
 
 extern void
 __bss_start();
@@ -362,7 +363,6 @@ uart_test()
 // ============================== 首核 ============================
 
 
-
 // 主内核入口函数
 void
 t_kernel_main(uint64_t id)
@@ -437,11 +437,9 @@ t_kernel_main(uint64_t id)
     logger_info("After enabling interrupts\n");
 
     // dw_uart_init();
-
-
     t_run_printf_tests();
 
-
+#if 0
     // 随机数模块测试
     srand_tick();
 
@@ -449,9 +447,10 @@ t_kernel_main(uint64_t id)
     logger_info("Random number test: %ld\n", rand_tick());
     logger_info("Random number test: %ld\n", rand_tick());
     logger_info("Random number test: %ld\n", rand_tick());
+#endif
 
     // 申请内存测试
-    size_t heap_size = (1 << 28);  // 1 G
+    size_t heap_size = (1ULL << 30) - (uint64_t) __heap_flag;  // 1 G
     t_mem_init(heap_size);
 
     const uint64_t table_addr = 0x7F000000;
@@ -464,6 +463,12 @@ t_kernel_main(uint64_t id)
     logger_info("Successfully loaded %zu programs\n", loaded);
     elf_loader_list_programs();
 
+#if 1
+    // 测试dbg断点功能
+    patch((void *) (0x81000ef8));
+#endif
+
+
 #if 0
     void t_mem_run_tests(void);
     void t_mem_run_stress_tests(void);
@@ -471,20 +476,20 @@ t_kernel_main(uint64_t id)
     t_mem_run_stress_tests();
 #endif
 
-
-#if 1 // set to 1 to enable simple.elf test without libc
+#if 1  // set to 1 to enable simple.elf test without libc
     logger_info("=== Testing simple.elf (no libc) ===\n");
-    
+
     // 测试 simple.elf - 不依赖 libc，直接使用系统调用
     const elf_descriptor_t *simple_desc = elf_loader_get_program("simple.elf");
     if (simple_desc) {
-        logger_info("Found simple.elf at 0x%lx, entry: 0x%lx\n", 
-                    simple_desc->start_addr, simple_desc->entry_point);
-        
+        logger_info("Found simple.elf at 0x%lx, entry: 0x%lx\n",
+                    simple_desc->start_addr,
+                    simple_desc->entry_point);
+
         // 直接调用入口点（main 函数）
         typedef int (*main_func_t)(int argc, char **argv, char **envp);
-        main_func_t simple_main = (main_func_t)simple_desc->entry_point;
-        
+        main_func_t simple_main = (main_func_t) simple_desc->entry_point;
+
         logger_info("Calling simple.elf main()...\n");
         int ret = simple_main(0, NULL, NULL);
         logger_info("simple.elf returned: %d\n", ret);
@@ -493,37 +498,33 @@ t_kernel_main(uint64_t id)
     }
 #endif
 
-#if 1 // set to 1 to enable hello.elf test with libc
+#if 1  // set to 1 to enable hello.elf test with libc
     // 初始化 TLS（线程局部存储），libc 需要
     __testos_init_tls();
+
+    patch((void *) 0x80000000UL + 0x2add0);  // libc.so 的 __init_libc 修补
+
     logger_info("=== Testing hello.elf (with libc) ===\n");
-    
+
     // 测试 hello.elf - 依赖 libc
     const elf_descriptor_t *hello_desc = elf_loader_get_program("hello.elf");
     if (hello_desc) {
         logger_info("Found hello.elf at 0x%lx\n", hello_desc->start_addr);
-        
+
         // 查找 main 函数
-        uint64_t main_addr = 0;
-        elf_result_t result = elf_find_symbol(hello_desc, "main", &main_addr);
+        uint64_t     main_addr = 0;
+        elf_result_t result    = elf_find_symbol(hello_desc, "main", &main_addr);
         if (result != ELF_SUCCESS) {
             logger_error("Cannot find 'main' symbol\n");
         } else {
             logger_info("Found main() at 0x%lx\n", main_addr);
-            
+
             // 执行 hello.elf
-            int ret = execute_libc_program(hello_desc->entry_point, (main_func_t)main_addr);
+            int ret = execute_libc_program(hello_desc->entry_point, (main_func_t) main_addr);
             logger_info("hello.elf returned: %d\n", ret);
         }
     }
 #endif
-
-// 原来的方式（通过 entry point 和 libc 初始化）
-// if (elf_loader_execute("hello.elf")) {
-//     logger_info("Hello process completed\n");
-// } else {
-//     logger_error("Failed to start hello process\n");
-// }
 
 #if 0
     {

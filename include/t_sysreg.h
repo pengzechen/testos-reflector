@@ -200,6 +200,9 @@ get_current_el(void)
 // Data Synchronization Barrier
 #define DSB_SY() __asm__ __volatile__("dsb sy" : : : "memory")
 
+#define DSB_ISH() __asm__ __volatile__("dsb ish" ::: "memory")
+
+
 // Instruction Synchronization Barrier
 #define ISB() __asm__ __volatile__("isb" : : : "memory")
 

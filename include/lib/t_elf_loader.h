@@ -20,12 +20,13 @@
  * it has placed in memory. The structure should be located at a known
  * address that the bootloader and kernel agree upon.
  */
-typedef struct {
-    char     name[64];       // ELF file name
-    uint64_t start_addr;     // Start address in memory (>= 0x80000000)
-    uint64_t size;           // Size in bytes
-    uint32_t flags;          // Flags (bit 0: 0=executable, 1=library)
-    uint32_t reserved;       // Reserved for future use
+typedef struct
+{
+    char     name[64];    // ELF file name
+    uint64_t start_addr;  // Start address in memory (>= 0x80000000)
+    uint64_t size;        // Size in bytes
+    uint32_t flags;       // Flags (bit 0: 0=executable, 1=library)
+    uint32_t reserved;    // Reserved for future use
 } __attribute__((packed)) bootloader_elf_info_t;
 
 /**
@@ -34,11 +35,12 @@ typedef struct {
  * Table of all ELF files loaded by the bootloader.
  * Located at a fixed address known to both bootloader and kernel.
  */
-typedef struct {
-    uint32_t magic;          // Magic number: 0x454C4654 ("ELF" + "T")
-    uint32_t version;        // Table version
-    uint32_t count;          // Number of ELF entries
-    uint32_t reserved;       // Reserved for future use
+typedef struct
+{
+    uint32_t              magic;     // Magic number: 0x454C4654 ("ELF" + "T")
+    uint32_t              version;   // Table version
+    uint32_t              count;     // Number of ELF entries
+    uint32_t              reserved;  // Reserved for future use
     bootloader_elf_info_t entries[MAX_ELF_FILES];
 } __attribute__((packed)) bootloader_elf_table_t;
 
@@ -60,7 +62,8 @@ typedef struct {
  * @param table_addr Address of the bootloader ELF table
  * @return Number of ELF files successfully loaded, or 0 on error
  */
-size_t elf_loader_init(uint64_t table_addr);
+size_t
+elf_loader_init(uint64_t table_addr);
 
 /**
  * Get a loaded program by name
@@ -68,7 +71,8 @@ size_t elf_loader_init(uint64_t table_addr);
  * @param name Program name to search for
  * @return Pointer to ELF descriptor if found, NULL otherwise
  */
-const elf_descriptor_t *elf_loader_get_program(const char *name);
+const elf_descriptor_t *
+elf_loader_get_program(const char *name);
 
 /**
  * Get a loaded program by index
@@ -76,26 +80,16 @@ const elf_descriptor_t *elf_loader_get_program(const char *name);
  * @param index Program index (0 to count-1)
  * @return Pointer to ELF descriptor if valid index, NULL otherwise
  */
-const elf_descriptor_t *elf_loader_get_program_by_index(size_t index);
+const elf_descriptor_t *
+elf_loader_get_program_by_index(size_t index);
 
 /**
  * Get the number of loaded programs
  * 
  * @return Number of successfully loaded programs
  */
-size_t elf_loader_get_program_count(void);
-
-/**
- * Execute a loaded program by name
- * 
- * Finds the program by name and jumps to its entry point.
- * Note: This is a simple implementation that doesn't handle
- * context switching or privilege levels.
- * 
- * @param name Program name to execute
- * @return true if program was found and executed, false otherwise
- */
-bool elf_loader_execute(const char *name);
+size_t
+elf_loader_get_program_count(void);
 
 /**
  * List all loaded programs
@@ -103,7 +97,8 @@ bool elf_loader_execute(const char *name);
  * Prints information about all successfully loaded programs
  * to the logger output.
  */
-void elf_loader_list_programs(void);
+void
+elf_loader_list_programs(void);
 
 /**
  * Resolve a symbol from loaded libraries
@@ -114,14 +109,8 @@ void elf_loader_list_programs(void);
  * @param symbol_name Name of the symbol to resolve
  * @return Address of the symbol if found, 0 otherwise
  */
-uint64_t elf_loader_resolve_symbol(const char *symbol_name);
+uint64_t
+elf_loader_resolve_symbol(const char *symbol_name);
 
-/**
- * Example kernel integration function
- * 
- * Demonstrates how to integrate the ELF loader into kernel initialization.
- * This is for reference and testing purposes.
- */
-void example_kernel_elf_init(void);
 
 #endif /* T_ELF_LOADER_H */
