@@ -50,14 +50,29 @@ handle_sync_exception(uint64_t *stack_pointer)
         uint64_t arg4 = el1_ctx->r[4];
         uint64_t arg5 = el1_ctx->r[5];
 
+        // uint64_t sp_before = el1_ctx->usp;
+        // logger("  [SYSCALL_DEBUG] Before: ELR=0x%lx, x30=0x%lx, SP=0x%lx\n", 
+        //        el1_ctx->elr, el1_ctx->r[30], sp_before);
+
         // 调用系统调用处理函数
         uint64_t ret = handle_syscall(syscall_num, arg0, arg1, arg2, arg3, arg4, arg5);
 
         // 将返回值放入 x0
         el1_ctx->r[0] = ret;
 
-        // 跳过 svc 指令（4 字节）
-        el1_ctx->elr += 4;
+        // ARM64 架构：对于 SVC 指令，ELR 应该指向 SVC 指令本身
+        // 但是实际测试发现 ELR 已经指向了下一条指令
+        // 所以我们再 +4 会跳过一条指令！
+        // 暂时注释掉这行，看看是否解决问题
+        // el1_ctx->elr += 4;
+
+        // uint64_t sp_after = el1_ctx->usp;
+        // logger("  [SYSCALL_DEBUG] After: ELR=0x%lx, x30=0x%lx, SP=0x%lx\n", 
+        //        el1_ctx->elr, el1_ctx->r[30], sp_after);
+        
+        // if (sp_before != sp_after) {
+        //     logger_warn("  [SYSCALL_DEBUG] WARNING: Stack pointer changed!\n");
+        // }
 
         return;
     }

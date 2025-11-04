@@ -17,20 +17,17 @@
  */
 static int64_t sys_write(int fd, const char *buf, size_t count)
 {
-    logger_info("[SYSCALL] sys_write: fd=%d, buf=%p, count=%zu\n", fd, buf, count);
-    
     // 简单实现：只支持 stdout 和 stderr，直接写到串口
     if (fd != STDOUT_FILENO && fd != STDERR_FILENO) {
         logger_error("[SYSCALL] sys_write: invalid fd=%d\n", fd);
         return -9; // -EBADF (Bad file descriptor)
     }
 
-    // 写入串口
+    // 写入串口（不打印调试信息，避免干扰用户输出）
     for (size_t i = 0; i < count; i++) {
         dw_uart_putchar(buf[i]);
     }
 
-    logger_info("[SYSCALL] sys_write: wrote %zu bytes\n", count);
     return (int64_t)count;
 }
 
@@ -39,8 +36,6 @@ static int64_t sys_write(int fd, const char *buf, size_t count)
  */
 static int64_t sys_writev(int fd, const void *iov, int iovcnt)
 {
-    logger_info("[SYSCALL] sys_writev: fd=%d, iov=%p, iovcnt=%d\n", fd, iov, iovcnt);
-    
     if (fd != STDOUT_FILENO && fd != STDERR_FILENO) {
         return -9; // -EBADF
     }
@@ -56,23 +51,20 @@ static int64_t sys_writev(int fd, const void *iov, int iovcnt)
         const char *buf = (const char *)iovec[i].iov_base;
         size_t len = iovec[i].iov_len;
         
-        logger_info("[SYSCALL]   iovec[%d]: base=%p, len=%zu\n", i, buf, len);
-        
         // 检查地址有效性
         uint64_t addr = (uint64_t)buf;
         if (len > 0 && (addr < 0x400000 || addr > 0x90000000)) {
-            logger_error("[SYSCALL]   iovec[%d]: INVALID ADDRESS %p (len=%zu)\n", i, buf, len);
-            logger_error("[SYSCALL]   Skipping this buffer to avoid crash\n");
+            logger_error("[SYSCALL] writev: INVALID ADDRESS %p (len=%zu), skipping\n", buf, len);
             continue;  // 跳过无效地址
         }
         
+        // 直接输出用户数据，不打印调试信息（避免干扰输出）
         for (size_t j = 0; j < len; j++) {
             dw_uart_putchar(buf[j]);
         }
         total += len;
     }
 
-    logger_info("[SYSCALL] sys_writev: wrote %ld bytes total\n", total);
     return total;
 }
 
@@ -81,14 +73,10 @@ static int64_t sys_writev(int fd, const void *iov, int iovcnt)
  */
 static int64_t sys_ioctl(int fd, unsigned long request, unsigned long arg)
 {
-    logger_info("[SYSCALL] sys_ioctl: fd=%d, request=0x%lx, arg=0x%lx\n", fd, request, arg);
-    
+    // 简化实现：大多数 ioctl 调用可以安全地返回成功
     (void)fd;
     (void)request;
     (void)arg;
-    
-    // 简化实现：大多数 ioctl 调用可以安全地返回成功
-    // 常见的 ioctl：TCGETS (0x5401), TIOCGWINSZ (0x5413) 等
     return 0;  // 假装成功
 }
 
@@ -270,9 +258,9 @@ static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
     (void)fd;
     (void)offset;
     
-    // 简化：总是使用 hello 的 mmap 区域
-    uint64_t *current_mmap = &hello_mmap_current;
-    uint64_t mmap_start = HELLO_MMAP_START;
+    // 关键修改：mmap 从当前 brk 位置开始分配
+    // 这样 musl libc 的内存管理可以正常工作
+    uint64_t heap_end = HELLO_HEAP_END;
     uint64_t mmap_end = HELLO_MMAP_END;
     
     // 简化实现：只支持匿名映射
@@ -281,16 +269,51 @@ static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
         return (int64_t)MAP_FAILED;
     }
     
+    // 检查 length 是否为 0
+    if (length == 0) {
+        logger_warn("[SYSCALL] sys_mmap: length=0, allocating one page (4KB)\n");
+        length = 4096;  // 至少分配一个页面
+    }
+    
     // 对齐到页边界（4KB）
     size_t aligned_length = (length + 0xFFF) & ~0xFFF;
     
-    // 如果指定了地址，尝试使用它
+    // 分配策略：
+    // musl libc 可能会请求在堆区域内的特定地址，我们需要检查是否冲突
+    uint64_t heap_start = HELLO_HEAP_START;
     uint64_t alloc_addr;
-    if (addr != NULL && (uint64_t)addr >= mmap_start && (uint64_t)addr < mmap_end) {
-        alloc_addr = (uint64_t)addr;
+    
+    if (addr != NULL && (uint64_t)addr >= heap_start && (uint64_t)addr < mmap_end) {
+        uint64_t requested_addr = (uint64_t)addr;
+        
+        // 检查请求的地址是否与当前 brk 冲突
+        if (requested_addr + aligned_length <= hello_brk_current) {
+            // 请求的区域完全在 brk 之前，这可能会覆盖已分配的堆内存
+            // 这种情况下，musl 可能认为这块内存是空闲的
+            // 为了安全，我们应该从 brk 之后分配
+            logger_warn("[SYSCALL] sys_mmap: hint %p conflicts with brk (%p), ignoring\n",
+                        addr, (void*)hello_brk_current);
+            goto alloc_from_current;
+        } else if (requested_addr < hello_brk_current && requested_addr + aligned_length > hello_brk_current) {
+            // 请求的区域跨越 brk，部分重叠
+            logger_warn("[SYSCALL] sys_mmap: hint %p partially overlaps brk (%p), ignoring\n",
+                        addr, (void*)hello_brk_current);
+            goto alloc_from_current;
+        } else {
+            // 请求的地址在 brk 之后，可以使用
+            alloc_addr = requested_addr;
+            logger_info("[SYSCALL] sys_mmap: using hint address %p (safe, after brk=%p)\n",
+                        addr, (void*)hello_brk_current);
+        }
     } else {
-        // 否则从当前位置分配
-        alloc_addr = *current_mmap;
+alloc_from_current:
+        // 从当前 mmap 位置分配，如果 mmap_current 还未初始化，则从 brk 后面开始
+        if (hello_mmap_current < hello_brk_current) {
+            hello_mmap_current = hello_brk_current;
+        }
+        alloc_addr = hello_mmap_current;
+        logger_info("[SYSCALL] sys_mmap: allocating from current position %p (brk=%p)\n",
+                    (void*)alloc_addr, (void*)hello_brk_current);
     }
     
     // 检查是否有足够空间
@@ -303,7 +326,7 @@ static int64_t sys_mmap(void *addr, size_t length, int prot, int flags,
     memset((void*)alloc_addr, 0, aligned_length);
     
     // 更新当前位置
-    *current_mmap = alloc_addr + aligned_length;
+    hello_mmap_current = alloc_addr + aligned_length;
     
     logger_info("[SYSCALL] sys_mmap: allocated %p (aligned %zu bytes)\n",
                 (void*)alloc_addr, aligned_length);
@@ -323,7 +346,8 @@ uint64_t handle_syscall(uint64_t syscall_num, uint64_t arg0, uint64_t arg1,
 
     int64_t ret = 0;
     
-    logger_info("[SYSCALL] #%llu called\n", syscall_num);
+    // 注释掉系统调用日志，避免干扰用户程序输出
+    // logger_info("[SYSCALL] #%llu called\n", syscall_num);
 
     switch (syscall_num) {
         case SYS_ioctl:
@@ -373,7 +397,8 @@ uint64_t handle_syscall(uint64_t syscall_num, uint64_t arg0, uint64_t arg1,
             break;
     }
     
-    logger_info("[SYSCALL] #%llu returned %ld\n", syscall_num, ret);
+    // 注释掉返回值日志，避免干扰用户程序输出
+    // logger_info("[SYSCALL] #%llu returned %ld\n", syscall_num, ret);
 
     return (uint64_t)ret;
 }
