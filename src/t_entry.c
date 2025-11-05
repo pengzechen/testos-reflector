@@ -463,7 +463,7 @@ t_kernel_main(uint64_t id)
     logger_info("Successfully loaded %zu programs\n", loaded);
     elf_loader_list_programs();
 
-#if 1
+#if 0
     // 测试dbg断点功能
     patch((void *) (0x81000ef8));
 #endif
@@ -502,7 +502,7 @@ t_kernel_main(uint64_t id)
     // 初始化 TLS（线程局部存储），libc 需要
     __testos_init_tls();
 
-    patch((void *) 0x80000000UL + 0x2add0);  // libc.so 的 __init_libc 修补
+    // patch((void *) 0x80000000UL + 0x2add0);  // libc.so 的 __init_libc debug
 
     logger_info("=== Testing hello.elf (with libc) ===\n");
 

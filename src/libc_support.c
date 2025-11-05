@@ -23,11 +23,39 @@ execute_libc_program(uint64_t entry_point, int (*main_func)(int, char **, char *
     static char  arg1[]         = "arg1";
     static char  arg2[]         = "arg2";
     static char *argv_storage[] = {prog_name, arg1, arg2, NULL};
-    static char *envp_storage[] = {NULL};
+    
+    /* 环境变量（至少放一个空字符串，musl 期望 envp 不为 NULL） */
+    static char env0[] = "";
+    /* 为 AT_RANDOM 提供 16 字节缓冲区（musl 使用这个作为安全随机种子） */
+    static unsigned char random_seed[16] = {0x12,0x34,0x56,0x78,0x9a,0xbc,0xde,0xf0,0,0,0,0,0,0,0,0};
+
+    static void *env_and_aux[] = {
+        /* envp: 环境字符串指针列表 */
+        env0,
+        /* envp 的终结 NULL - __init_libc 会用它来定位 auxv */
+        NULL,
+
+        /* 接下来开始放 auxv 的 (type, value) 成对项 (以 size_t 单元存储) */
+        /* AT_PAGESZ = 6, 值例如 4096 */
+        (void*)(uint64_t)6,        (void*)(uint64_t)4096,
+
+        /* AT_RANDOM = 25, value = 指向 16 字节随机缓冲区的指针 */
+        (void*)(uint64_t)25,       (void*)(uint64_t)random_seed,
+
+        /* 其它条目可以按需加入，例如 AT_EXECFN(31) 指向程序名:
+        (void*)(uint64_t)31, (void*)(uint64_t)prog_name,
+        … */
+
+        /* AT_NULL 结束 */
+        (void*)(uint64_t)0,        (void*)(uint64_t)0
+    };
+
+        /* 使用方式 */
+    char **argv = argv_storage;
+    /* 这里把 envp 指向 env_and_aux 开头，__init_libc 会在 NULL 后找到 auxv */
+    char **envp = (char **)env_and_aux;
 
     int    argc = 3;
-    char **argv = argv_storage;
-    char **envp = envp_storage;
 
     // 方案：手动调用 __init_libc 初始化 libc，然后直接调用 main
     // __init_libc 的签名：
@@ -98,7 +126,7 @@ static struct __libc_t __libc_data = {
 };
 
 // 导出 __libc 符号（libc 内部会使用）
-struct __libc_t *__libc = &__libc_data;
+// struct __libc_t *__libc = &__libc_data;
 
 // __hwcap - 硬件能力标志
 unsigned long __hwcap = 0;

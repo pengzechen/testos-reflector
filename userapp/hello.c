@@ -58,12 +58,7 @@ void test_memory(void) {
     }
     printf("\n");
     
-    // 释放内存
-    // 注意：当前的系统调用实现无法完全支持 musl libc 的 free()
-    // 因为 musl 需要复杂的内存管理元数据，而我们的 mmap 实现太简化
-    // 暂时跳过 free() 以验证其他功能
     free(ptr);
-    printf("Memory test completed (free() skipped due to limitations)\n");
 }
 
 // 测试函数：循环计数
@@ -77,7 +72,7 @@ void test_loop(void) {
 }
 
 int main(int argc, char *argv[]) {
-    printf("6\n");
+    printf("\n");
     printf("========================================\n");
     printf("  TestOS User Application - Hello World\n");
     printf("========================================\n");
