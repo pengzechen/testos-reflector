@@ -109,6 +109,9 @@ mount_and_copy() {
     info "复制 dtb 文件到镜像中..."
     sudo cp "${ORANGEPI5_DIR}/$DTB_PATH" "${MOUNT_POINT}/rk3588-orangepi-5-plus.dtb"
 
+    info "复制 elf_table.bin..."
+    sudo cp "${USERAPP_DIR}/elf_table.bin" "${MOUNT_POINT}/"
+
     # 复制 musl 库文件
     info "复制 musl 库文件到镜像中..."
     if [ -d "$MUSL_LIB_DIR" ]; then
@@ -117,12 +120,8 @@ mount_and_copy() {
         # 定义需要复制的库文件列表（使用 -P 保留符号链接）
         local libs=(
             "libc.so"
-            "libm.so"
-            "libpthread.so"
-            "libdl.so"
-            "librt.so"
-            "ld-musl-aarch64.so.1"
-            "libstdc++.so.6"
+            "libitm.so.1.0.0"
+            "libstdc++.so.6.0.29"
             "libgcc_s.so.1"
         )
         

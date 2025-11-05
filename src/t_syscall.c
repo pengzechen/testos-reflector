@@ -12,11 +12,11 @@
 // 定义用户程序的堆区域
 // 为每个 ELF 预留独立的堆空间
 
-#define HELLO_HEAP_START 0x81100000UL  // hello.elf 的堆起始地址
-#define HELLO_HEAP_END   0x82000000UL
+#define HELLO_HEAP_START 0x85100000UL  // hello.elf 的堆起始地址
+#define HELLO_HEAP_END   0x86000000UL
 
-#define SIMPLE_HEAP_START 0x82100000UL  // simple.elf 的堆起始地址
-#define SIMPLE_HEAP_END   0x83000000UL
+#define SIMPLE_HEAP_START 0x86100000UL  // simple.elf 的堆起始地址
+#define SIMPLE_HEAP_END   0x87000000UL
 
 static uint64_t hello_brk_current  = HELLO_HEAP_START;
 static uint64_t simple_brk_current = SIMPLE_HEAP_START;
