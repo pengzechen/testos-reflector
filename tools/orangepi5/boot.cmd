@@ -31,7 +31,6 @@ ext4load mmc 1:1  0x84000000 libitm.so.1.0.0
 
 ext4load mmc 1:1  0x85000000 hello.elf
 ext4load mmc 1:1  0x86000000 simple.elf
-ext4load mmc 1:1  0x87000000 hello_cpp.elf
 
 
 

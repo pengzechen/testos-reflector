@@ -98,7 +98,7 @@ mount_and_copy() {
     sudo mount -o loop "$OUTPUT_IMAGE" "$MOUNT_POINT"
 
     info "制作 boot.src 文件..."
-    mkimage -A arm -T script -C none -n "TF boot" -d "${ORANGEPI5_DIR}/boot.cmd" boot.scr
+    mkimage -A arm -T script -C none -n "TF boot" -d "${ORANGEPI5_DIR}/boot.eth.cmd" boot.scr
     
     info "复制 boot 文件到镜像中..."
     sudo cp boot.scr "${MOUNT_POINT}"
