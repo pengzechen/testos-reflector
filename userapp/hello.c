@@ -3,6 +3,9 @@
 #include <unistd.h>
 #include <string.h>
 
+static int x = 42; // 全局变量测试
+char * test_bss = "test bss sectino."; // 程序名
+
 // 测试函数：基本输出
 void test_hello(void) {
     printf("Hello from TestOS user application!\n");
@@ -83,6 +86,9 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < argc; i++) {
         printf("  argv[%d] = %s\n", i, argv[i]);
     }
+
+    printf("global variable x = %d\n", x);
+    printf("bss variable test_bss = %s\n", test_bss);
     
     // 运行各种测试
     test_hello();

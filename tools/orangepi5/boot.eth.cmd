@@ -18,6 +18,7 @@ tftp  0x82000000 libstdc++.so.6.0.29
 tftp  0x84000000 libitm.so.1.0.0
 tftp  0x85000000 hello.elf
 tftp  0x86000000 simple.elf
+tftp  0x87000000 hello_cpp.elf
 
 bootm 0x400000 - 0x300000
 
