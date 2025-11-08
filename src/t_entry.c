@@ -507,7 +507,7 @@ t_kernel_main(uint64_t id)
     logger_info("=== Testing hello.elf (with libc) ===\n");
 
     // 测试 hello.elf - 依赖 libc
-    const elf_descriptor_t *hello_desc = elf_loader_get_program("hello.elf");
+    const elf_descriptor_t *hello_desc = elf_loader_get_program("hello_cpp.elf");
     if (hello_desc) {
         logger_info("Found hello.elf at 0x%lx\n", hello_desc->start_addr);
 

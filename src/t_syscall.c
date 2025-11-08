@@ -19,7 +19,7 @@
 #define SIMPLE_HEAP_END   0x87000000UL
 
 static uint64_t hello_brk_current  = HELLO_HEAP_START;
-static uint64_t simple_brk_current = SIMPLE_HEAP_START;
+static uint64_t __attribute__((unused))  simple_brk_current = SIMPLE_HEAP_START;
 
 
 static int64_t

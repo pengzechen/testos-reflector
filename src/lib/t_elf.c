@@ -97,8 +97,8 @@ elf_apply_relocations(uint64_t            base_addr,
                         if (sym_addr != 0) {
                             *reloc_addr = sym_addr;
                         } else {
-                            logger_warn("Could not resolve external symbol '%s', setting to 0\n",
-                                        sym_name);
+                            // logger_warn("Could not resolve external symbol '%s', setting to 0\n",
+                            //             sym_name);
                             *reloc_addr = 0;
                         }
                     } else {
@@ -123,6 +123,35 @@ elf_apply_relocations(uint64_t            base_addr,
                     return ELF_ERROR_RELOCATION_FAILED;
                 }
                 break;
+
+            case R_AARCH64_TLSDESC: {
+                uint64_t *desc_addr = (uint64_t *) reloc_addr;  // descriptor location in memory
+
+                uint64_t arg_value = 0;
+                if (symtab && sym_idx > 0) {
+                    const elf64_sym_t *sym = &symtab[sym_idx];
+                    /* 假设 sym->st_value 是相对于 module TLS 起点的偏移 */
+                    arg_value = sym->st_value + r->r_addend;
+                } else {
+                    /* 局部 TLS，sym_idx == 0，使用 addend 作为偏移 */
+                    arg_value = (uint64_t) r->r_addend;
+                }
+
+                /* 写入 descriptor:
+                desc[0] = resolver pointer
+                desc[1] = offset / tls_index (这里我们用偏移)
+                */
+                extern void *__tls_get_addr(void *desc);
+                desc_addr[0] = (uint64_t) &__tls_get_addr;
+                desc_addr[1] = arg_value;
+
+                logger("Wrote TLSDESC at %p: resolver=%p arg=0x%llx\n",
+                            (void *) desc_addr,
+                            (void *) desc_addr[0],
+                            (unsigned long long) desc_addr[1]);
+
+                break;
+            }
 
             default:
                 logger_warn("Unsupported relocation type: %llu\n", type);

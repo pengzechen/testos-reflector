@@ -102,12 +102,14 @@
 #define R_AARCH64_PREL64       260
 #define R_AARCH64_PREL32       261
 #define R_AARCH64_PREL16       262
-#define R_AARCH64_RELATIVE     1027
+
 #define R_AARCH64_GLOB_DAT     1025
 #define R_AARCH64_JUMP_SLOT    1026
+#define R_AARCH64_RELATIVE     1027
 #define R_AARCH64_TLS_DTPREL64 1028
 #define R_AARCH64_TLS_DTPMOD64 1029
 #define R_AARCH64_TLS_TPREL64  1030
+#define R_AARCH64_TLSDESC      1031	/* TLS Descriptor.  */
 
 /* Symbol Binding */
 #define STB_LOCAL  0

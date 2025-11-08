@@ -45,6 +45,9 @@ execute_libc_program(uint64_t entry_point, int (*main_func)(int, char **, char *
         /* 其它条目可以按需加入，例如 AT_EXECFN(31) 指向程序名:
         (void*)(uint64_t)31, (void*)(uint64_t)prog_name,
         … */
+        // (void*)(uint64_t)3,       (void*)(uint64_t)0, // AT_PHDR
+        // (void*)(uint64_t)4,       (void*)(uint64_t)0, // AT_PHENT
+        // (void*)(uint64_t)5,       (void*)(uint64_t)0, // AT_PHNUM
 
         /* AT_NULL 结束 */
         (void*)(uint64_t)0,        (void*)(uint64_t)0
@@ -58,11 +61,6 @@ execute_libc_program(uint64_t entry_point, int (*main_func)(int, char **, char *
     int    argc = 3;
 
     // 方案：手动调用 __init_libc 初始化 libc，然后直接调用 main
-    // __init_libc 的签名：
-    // void __init_libc(char **envp, char *pn)
-    // 其中：
-    //   envp = 环境变量指针数组（从 argv 末尾算起）
-    //   pn   = 程序名（argv[0]）
     typedef void (*init_libc_t)(char **, char *);
 
     // libc.so 的 __init_libc 在 0x2528c
@@ -74,6 +72,14 @@ execute_libc_program(uint64_t entry_point, int (*main_func)(int, char **, char *
 
     // 调用 __init_libc 初始化
     init_libc(envp, argv[0]);
+
+    typedef void (*libc_start_init_t)(void);
+
+    libc_start_init_t libc_start_init = (libc_start_init_t) (0x80000000UL + 0x642f4);
+    logger_info("Calling __libc_start_init at 0x%lx\n", (uint64_t) libc_start_init);
+    // 调用 __libc_start_init 完成初始化
+    // libc_start_init();
+    (void)libc_start_init;
 
     logger_info("libc initialized, calling main at 0x%lx\n", (uint64_t) main_func);
 
@@ -99,41 +105,6 @@ struct __testos_tls
 
 static struct __testos_tls g_tls = {0};
 
-/**
- * libc 需要的一些全局变量
- * 
- * 这些变量在 libc 内部使用，我们需要提供它们
- */
-
-// __libc 结构体（简化版）
-struct __libc_t
-{
-    int          threaded;
-    int          secure;
-    size_t      *auxv;
-    volatile int threads_minus_1;
-    size_t       tls_size;
-    size_t       page_size;
-};
-
-static struct __libc_t __libc_data = {
-    .threaded        = 0,
-    .secure          = 0,
-    .auxv            = NULL,
-    .threads_minus_1 = 0,
-    .tls_size        = sizeof(struct __testos_tls),
-    .page_size       = 4096,
-};
-
-// 导出 __libc 符号（libc 内部会使用）
-// struct __libc_t *__libc = &__libc_data;
-
-// __hwcap - 硬件能力标志
-unsigned long __hwcap = 0;
-
-// __sysinfo - 系统信息（VDSO 相关）
-unsigned long __sysinfo = 0;
-
 void
 __testos_init_tls(void)
 {
@@ -144,6 +115,22 @@ __testos_init_tls(void)
     __asm__ volatile("msr tpidr_el0, %0" : : "r"(&g_tls));
 
     logger_info("TLS initialized at %p\n", &g_tls);
+}
+
+/* 读取 TP（TPIDR_EL0） */
+static inline void *read_tp(void) {
+    void *tp;
+    __asm__ volatile("mrs %0, tpidr_el0" : "=r"(tp));
+    return tp;
+}
+
+/* resolver: 参数是 descriptor 指针（在调用点 x0） */
+void *__tls_get_addr(void *desc) {
+    uint64_t arg = ((uint64_t *)desc)[1]; /* 第二字：偏移 */
+    void *tp = read_tp();
+
+    /* 返回 TP + offset */
+    return (void *)((char *)tp + (size_t)arg);
 }
 
 /**

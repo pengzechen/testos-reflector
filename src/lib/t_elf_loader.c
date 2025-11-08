@@ -230,7 +230,7 @@ elf_loader_init(uint64_t table_addr)
     for (uint32_t i = 0; i < table->count; i++) {
         const bootloader_elf_info_t *info = &table->entries[i];
 
-        logger_info("--- Processing ELF #%u: %s ---\n", i, info->name);
+        logger_warn("--- Processing ELF #%u: %s ---\n", i, info->name);
 
         // Load with dependencies
         load_elf_with_dependencies(info->name);
@@ -422,6 +422,6 @@ elf_loader_resolve_symbol(const char *symbol_name)
         }
     }
 
-    logger_warn("Symbol '%s' not found in any loaded library\n", symbol_name);
+    logger_warn("Symbol '%s' not found in any loaded library,set 0\n", symbol_name);
     return 0;
 }
