@@ -44,6 +44,8 @@ aarch64-linux-musl-gcc -O2 -Wall -Wextra \
 
 sudo minicom -b 1500000 -D /dev/ttyUSB0 --color=on
 
+aarch64-linux-musl-g++ hello_cpp.cpp -Wl,--export-dynamic -ohello_cpp.elf 
+aarch64-linux-musl-objdump -x -d -S hello_cpp.elf > ../c++.txt
 
 sudo cp testos-reflector-src_aarch64-opi5p.uimg /data/docker/tftpboot/data/kernel.uimg
 sudo cp tools/orangepi5/rk3588-orangepi-5-plus.dtb /data/docker/tftpboot/data/rk3588-orangepi-5-plus.dtb

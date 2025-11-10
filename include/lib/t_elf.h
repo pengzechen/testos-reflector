@@ -65,6 +65,7 @@
 #define SHT_REL      9   // Relocation entries, no addends
 #define SHT_SHLIB    10  // Reserved
 #define SHT_DYNSYM   11  // Dynamic linker symbol table
+#define SHT_INIT_ARRAY 14 // Section type for .init_array
 
 /* Dynamic Table Tags */
 #define DT_NULL     0   // End of dynamic section
@@ -93,6 +94,9 @@
 #define DT_TEXTREL  22  // Relocation might modify .text
 #define DT_JMPREL   23  // Address of PLT relocation entries
 #define DT_BIND_NOW 24  // Process relocations at load time
+#define	DT_INIT_ARRAY	25
+#define	DT_INIT_ARRAYSZ	27
+
 
 /* Relocation Types for AArch64 */
 #define R_AARCH64_NONE         0

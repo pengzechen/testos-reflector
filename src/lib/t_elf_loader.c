@@ -10,12 +10,27 @@
 #include "lib/t_logger.h"
 #include "lib/t_string.h"
 #include "t_types.h"
+#include "libc_support.h"
+
+#undef ELF64_ST_BIND
+#undef ELF64_ST_TYPE
+#undef ELF64_ST_INFO
+#undef ELF64_R_TYPE
+#undef ELF64_R_INFO
+#undef PF_X
+#undef PF_W
+#undef PF_R
+#undef R_AARCH64_TLS_DTPMOD64
+#undef R_AARCH64_TLS_DTPREL64
 
 /**
  * Global array to store loaded ELF descriptors
  */
 static elf_descriptor_t loaded_programs[MAX_ELF_FILES];
 static size_t           num_loaded_programs = 0;
+
+void
+call_init_array(const elf_descriptor_t *desc);
 
 /**
  * Global pointer to bootloader table for dependency resolution
@@ -178,6 +193,10 @@ load_elf_with_dependencies(const char *name)
     if (result == ELF_SUCCESS) {
         logger_info("  %s: Loaded successfully (entry: 0x%llx)\n", desc->name, desc->entry_point);
         num_loaded_programs++;
+
+        // Call .init_array after successful load
+        call_init_array(desc);
+
         return true;
     } else {
         logger_error("  %s: Failed - %s\n", desc->name, elf_error_string(result));
@@ -234,6 +253,11 @@ elf_loader_init(uint64_t table_addr)
 
         // Load with dependencies
         load_elf_with_dependencies(info->name);
+        if (i == 0)  // libc
+        {
+            // 初始化libc
+            execute_libc_program(0, (main_func_t) NULL);
+        }
     }
 
     logger_info("=== Total: Loaded %zu ELF file(s) ===\n", num_loaded_programs);
@@ -424,4 +448,100 @@ elf_loader_resolve_symbol(const char *symbol_name)
 
     logger_warn("Symbol '%s' not found in any loaded library,set 0\n", symbol_name);
     return 0;
+}
+
+/**
+ * Call all functions in the .init_array section of an ELF file
+ */
+// void
+// call_init_array(const elf_descriptor_t *desc)
+// {
+//     logger_warn("Entering call_init_array for %s\n", desc->name);
+
+//     const elf64_ehdr_t *ehdr     = (const elf64_ehdr_t *) desc->start_addr;
+//     const uint8_t      *elf_base = (const uint8_t *) desc->start_addr;
+//     const elf64_phdr_t *phdr     = (const elf64_phdr_t *) (elf_base + ehdr->e_phoff);
+
+//     logger_warn("ELF header and program header parsed for %s\n", desc->name);
+
+//     for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
+//         if (phdr[i].p_type == PT_DYNAMIC) {
+//             logger_warn("Processing PT_DYNAMIC segment %u\n", i);
+//             const elf64_dyn_t *shdr = (const elf64_dyn_t *) (elf_base + phdr[i].p_offset);
+
+//             for (uint16_t j = 0; shdr[j].d_tag != DT_NULL; j++) {
+//                 if (shdr[j].d_tag == DT_INIT_ARRAY) {
+//                     logger_warn("Found .init_array section for %s\n", desc->name);
+//                     const void (**init_array)(void) =
+//                         (const void (**)(void))(elf_base + shdr[j].d_un.d_ptr);
+//                     size_t count = shdr[j].d_un.d_val / sizeof(void (*)(void));
+//                     logger_warn("Found %zu .init_array functions for %s\n", count, desc->name);
+
+//                     // for (size_t k = 0; k < count; k++) {
+//                     //     if (init_array[k]) {
+//                     //         logger_warn("Calling .init_array function %zu at %p\n",
+//                     //                     k,
+//                     //                     (void *) init_array[k]);
+//                     //         // init_array[k]();
+//                     //     } else {
+//                     //         logger_warn(".init_array function %zu is NULL\n", k);
+//                     //     }
+//                     // }
+//                 }
+//             }
+//         }
+//     }
+
+//     logger_warn("Exiting call_init_array for %s\n", desc->name);
+// }
+void
+call_init_array(const elf_descriptor_t *desc)
+{
+    const elf64_ehdr_t *ehdr     = (const elf64_ehdr_t *) desc->start_addr;
+    const uint8_t      *elf_base = (const uint8_t *) desc->start_addr;
+    const elf64_phdr_t *phdr     = (const elf64_phdr_t *) (elf_base + ehdr->e_phoff);
+
+    const elf64_dyn_t *dyn             = NULL;
+    size_t             init_array_size = 0;
+    void (**init_array)(void)          = NULL;
+
+    // 找 PT_DYNAMIC 段
+    for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
+        if (phdr[i].p_type == PT_DYNAMIC) {
+            dyn = (const elf64_dyn_t *) (elf_base + phdr[i].p_offset);
+            break;
+        }
+    }
+    if (!dyn) {
+        logger_warn("%s: no PT_DYNAMIC found\n", desc->name);
+        return;
+    }
+
+    // 解析 DT_INIT_ARRAY 和 DT_INIT_ARRAYSZ
+    for (size_t j = 0; dyn[j].d_tag != DT_NULL; j++) {
+        switch (dyn[j].d_tag) {
+            case DT_INIT_ARRAY:
+                init_array = (void (**)(void))(dyn[j].d_un.d_ptr + desc->start_addr);
+                break;
+            case DT_INIT_ARRAYSZ:
+                init_array_size = dyn[j].d_un.d_val;
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (init_array && init_array_size > 0) {
+        size_t count = init_array_size / sizeof(void (*)(void));
+        logger_warn("%s: calling %zu .init_array constructors\n", desc->name, count);
+        for (size_t i = 0; i < count; i++) {
+            // if (init_array[i]) {
+            logger_warn("  -> calling %p\n", init_array[i]);
+            // if ((uint64_t)(init_array[i]) > 0x87000000)
+            init_array[i]();
+            // }
+        }
+    } else {
+        logger_warn("%s: no .init_array found or size=0\n", desc->name);
+    }
 }

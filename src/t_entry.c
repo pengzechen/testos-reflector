@@ -453,6 +453,12 @@ t_kernel_main(uint64_t id)
     size_t heap_size = (1ULL << 30) - (uint64_t) __heap_flag;  // 1 G
     t_mem_init(heap_size);
 
+    // 初始化 TLS（线程局部存储），libc 需要
+    __testos_init_tls();
+    // patch((void *) 0x8003ecac); 
+    // patch((void *) 0x8003ecb0);  // libstdc++.so 的 _ZNSt8ios_base4InitC1Ev debug
+    // patch((void *) 0x8003ecb4);  // libstdc++.so 的 _ZNSt8ios_base4InitC1Ev debug
+
     const uint64_t table_addr = 0x7F000000;
     // Initialize the ELF loader
     size_t loaded = elf_loader_init(table_addr);
@@ -498,16 +504,11 @@ t_kernel_main(uint64_t id)
     }
 #endif
 
-#if 1  // set to 1 to enable hello.elf test with libc
-    // 初始化 TLS（线程局部存储），libc 需要
-    __testos_init_tls();
-
-    // patch((void *) 0x80000000UL + 0x2add0);  // libc.so 的 __init_libc debug
-
+#if 0  // set to 1 to enable hello.elf test with libc
     logger_info("=== Testing hello.elf (with libc) ===\n");
 
     // 测试 hello.elf - 依赖 libc
-    const elf_descriptor_t *hello_desc = elf_loader_get_program("hello_cpp.elf");
+    const elf_descriptor_t *hello_desc = elf_loader_get_program("hello.elf");
     if (hello_desc) {
         logger_info("Found hello.elf at 0x%lx\n", hello_desc->start_addr);
 
@@ -522,6 +523,27 @@ t_kernel_main(uint64_t id)
             // 执行 hello.elf
             int ret = execute_libc_program(hello_desc->entry_point, (main_func_t) main_addr);
             logger_info("hello.elf returned: %d\n", ret);
+        }
+    }
+#else
+    logger_info("=== Testing hello_cpp.elf (with libc) ===\n");
+
+    // 测试 hello_cpp.elf - 依赖 libc
+    const elf_descriptor_t *hello_desc = elf_loader_get_program("hello_cpp.elf");
+    if (hello_desc) {
+        logger_info("Found hello_cpp.elf at 0x%lx\n", hello_desc->start_addr);
+
+        // 查找 main 函数
+        uint64_t     main_addr = 0;
+        elf_result_t result    = elf_find_symbol(hello_desc, "main", &main_addr);
+        if (result != ELF_SUCCESS) {
+            logger_error("Cannot find 'main' symbol\n");
+        } else {
+            logger_info("Found main() at 0x%lx\n", main_addr);
+
+            // 执行 hello_cpp.elf
+            int ret = execute_libc_program(hello_desc->entry_point, (main_func_t) main_addr);
+            logger_info("hello_cpp.elf returned: %d\n", ret);
         }
     }
 #endif
@@ -544,7 +566,7 @@ t_kernel_main(uint64_t id)
     }
 #endif
 
-
+    logger_info("Kernel main completed, entering WFI loop\n");
     while (1) {
         WFI();
     }
