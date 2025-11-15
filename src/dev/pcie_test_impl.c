@@ -153,14 +153,11 @@ static rtl_desc_t       *tx_ring       = NULL;
 static rtl_desc_t       *rx_ring       = NULL;
 static uint8_t          *tx_buffers[NUM_TX_DESC];
 static uint8_t          *rx_buffers[NUM_RX_DESC];
-static uint32_t          tx_idx           = 0;
-static uint32_t          rx_idx           = 0;
-static uint8_t           my_mac[ETH_ALEN] = {0x00, 0xe0, 0x4c, 0x68, 0x12, 0x34};
+static uint32_t          tx_idx               = 0;
+static uint32_t          rx_idx               = 0;
+static uint8_t           my_mac[ETH_ALEN]     = {0x00, 0xe0, 0x4c, 0x68, 0x12, 0x34};
+static uint8_t           remote_mac[ETH_ALEN] = {0x38, 0x68, 0x93, 0x68, 0x4C, 0xC8};
 
-static char tx_buf0[1024];
-static char tx_buf1[1024];
-static char rx_buf0[2048];
-static char rx_buf1[2048];
 
 /* Helper functions for MMIO */
 static inline uint8_t
@@ -691,8 +688,8 @@ rtl8125_init(uint64_t mmio_base)
 
     /* For simplicity, using static allocation in real implementation
      * these should be DMA-able memory regions */
-    tx_ring = (rtl_desc_t *)0x50200000;  /* Example physical address */
-    rx_ring = (rtl_desc_t *)0x50201000;
+    tx_ring = (rtl_desc_t *) 0x50200000; /* Example physical address */
+    rx_ring = (rtl_desc_t *) 0x50201000;
     memset((tx_ring), 0, sizeof(rtl_desc_t));
     memset((rx_ring), 0, sizeof(rtl_desc_t));
 
@@ -702,22 +699,22 @@ rtl8125_init(uint64_t mmio_base)
     /* Setup TX descriptors */
     logger_info("  Setting up TX ring...\n");
     for (i = 0; i < NUM_TX_DESC; i++) {
-        tx_ring[i].status = 0;
-        tx_ring[i].vlan_tag = 0;
+        tx_ring[i].status      = 0;
+        tx_ring[i].vlan_tag    = 0;
         tx_ring[i].buf_addr_lo = 0x50300000 + (i * TX_BUF_SIZE);
         tx_ring[i].buf_addr_hi = 0;
-        tx_buffers[i] = (uint8_t *)(0x50300000UL + (i * TX_BUF_SIZE));
+        tx_buffers[i]          = (uint8_t *) (0x50300000UL + (i * TX_BUF_SIZE));
     }
     tx_ring[NUM_TX_DESC - 1].status |= DESC_EOR;
 
     /* Setup RX descriptors */
     logger_info("  Setting up RX ring...\n");
     for (i = 0; i < NUM_RX_DESC; i++) {
-        rx_ring[i].status = DESC_OWN | RX_BUF_SIZE;
-        rx_ring[i].vlan_tag = 0;
+        rx_ring[i].status      = DESC_OWN | RX_BUF_SIZE;
+        rx_ring[i].vlan_tag    = 0;
         rx_ring[i].buf_addr_lo = 0x50400000 + (i * RX_BUF_SIZE);
         rx_ring[i].buf_addr_hi = 0;
-        rx_buffers[i] = (uint8_t *)(0x50400000UL + (i * RX_BUF_SIZE));
+        rx_buffers[i]          = (uint8_t *) (0x50400000UL + (i * RX_BUF_SIZE));
     }
     rx_ring[NUM_RX_DESC - 1].status |= DESC_EOR;
 
@@ -857,7 +854,8 @@ rtl8125_recv_packet(uint8_t *buffer, uint32_t *len, uint32_t timeout_ms)
 
     // 获取包长度
     uint32_t pkt_len = rx_ring[rx_idx].status & 0x3FFF;
-    if (pkt_len > RX_BUF_SIZE) pkt_len = RX_BUF_SIZE;
+    if (pkt_len > RX_BUF_SIZE)
+        pkt_len = RX_BUF_SIZE;
 
     // ===== 关键：使 RX 缓冲区缓存失效，从内存读取硬件写入的数据 =====
     uint64_t buf_start = (uint64_t) rx_buffers[rx_idx] & ~(g_cache_line_size - 1);
@@ -901,13 +899,19 @@ send_ping(uint8_t src_ip[4], uint8_t dst_ip[4], uint16_t seq)
     /* Ethernet header */
     eth = (eth_hdr_t *) packet;
     /* Destination MAC (broadcast for simplicity) */
-    memset_local(eth->dest, 0xFF, ETH_ALEN);
+    memcpy_local(eth->dest, remote_mac, ETH_ALEN);
     memcpy_local(eth->src, my_mac, ETH_ALEN);
     eth->proto = htons(ETH_P_IP);
     pkt_len += sizeof(eth_hdr_t);
 
     logger_debug("  Ethernet header:\n");
-    logger_debug("    Dest MAC: ff:ff:ff:ff:ff:ff\n");
+    logger_debug("    Dest MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                 eth->dest[0],
+                 eth->dest[1],
+                 eth->dest[2],
+                 eth->dest[3],
+                 eth->dest[4],
+                 eth->dest[5]);
     logger_debug("    Src MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
                  my_mac[0],
                  my_mac[1],
@@ -994,11 +998,6 @@ test_dw_pcie_atu(void)
     uint64_t rtl_mmio_phys = 0x9c0100000UL; /* From your Rust code */
     uint64_t rtl_mmio_virt;
     int      ret;
-
-    tx_buffers[0] = tx_buf0;
-    tx_buffers[1] = tx_buf1;
-    rx_buffers[0] = rx_buf0;
-    rx_buffers[1] = rx_buf1;
 
     logger_info("\n");
     logger_info("========================================\n");
