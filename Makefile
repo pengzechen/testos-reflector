@@ -79,7 +79,7 @@ qemu-debug: $(BIN_TARGET)
 	qemu-system-aarch64 -machine virt,gic-version=3 -cpu cortex-a53 -kernel $< -nographic -s -S
 
 uimg: $(BIN_TARGET)
-	mkimage -A arm64 -O linux -T kernel -C none -a 0x400000 -e 0x400000 -n "testos Kernel" -d build/testos.bin testos-reflector-src_aarch64-opi5p.uimg 
+	mkimage -A arm64 -O linux -T kernel -C none -a 0x400000 -e 0x400000 -n "testos Kernel" -d build/testos.bin testos-reflector_aarch64-opi5p.uimg 
 
 uboot: uimg
 	cp testos-reflector_aarch64-opi5p.uimg /data/docker/tftpboot/data/kernel.uimg

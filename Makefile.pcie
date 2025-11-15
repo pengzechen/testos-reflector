@@ -1,0 +1,240 @@
+# Makefile 修改建议
+# 将以下内容添加到你的 Makefile 中以编译 PCIe 和 RTL8125 驱动
+
+# ==========================================
+# PCIe 和 RTL8125 驱动配置
+# ==========================================
+
+# 源文件
+PCIE_SOURCES = \
+	pcie_dw_rockchip.c \
+	src/test_pcie_network.c
+
+# 包含路径 (如果需要)
+PCIE_INCLUDES = \
+	-I./include \
+	-I./include/dev \
+	-I./include/lib \
+	-I./include/mem
+
+# 编译选项
+PCIE_CFLAGS = \
+	-DENABLE_PCIE_DEBUG \
+	-DRTL8125_SUPPORT
+
+# ==========================================
+# 集成到现有 Makefile
+# ==========================================
+
+# 方法 1: 添加到现有的 SOURCES 变量
+# SOURCES += $(PCIE_SOURCES)
+
+# 方法 2: 单独编译为对象文件
+# PCIE_OBJS = $(PCIE_SOURCES:.c=.o)
+# OBJS += $(PCIE_OBJS)
+
+# 方法 3: 创建库文件
+# libpcie.a: $(PCIE_OBJS)
+# 	$(AR) rcs $@ $^
+
+# ==========================================
+# 示例: 完整的 Makefile 片段
+# ==========================================
+
+# 交叉编译器设置
+CROSS_COMPILE ?= aarch64-linux-gnu-
+CC = $(CROSS_COMPILE)gcc
+LD = $(CROSS_COMPILE)ld
+AR = $(CROSS_COMPILE)ar
+OBJCOPY = $(CROSS_COMPILE)objcopy
+
+# 编译选项
+CFLAGS = -Wall -O2 -g
+CFLAGS += -nostdlib -ffreestanding
+CFLAGS += -mcpu=cortex-a76
+CFLAGS += $(PCIE_INCLUDES)
+CFLAGS += $(PCIE_CFLAGS)
+
+# 链接选项
+LDFLAGS = -T src/boot/t_link.lds
+
+# 所有源文件
+SOURCES = \
+	src/t_entry.c \
+	src/test_npu.c \
+	src/boot/t_smp.c \
+	src/boot/earlypage.c \
+	src/dev/t_uart_dwp.c \
+	src/dev/t_gicv3.c \
+	src/dev/t_timer.c \
+	src/dev/scmi.c \
+	src/dev/cru.c \
+	src/dev/xmodem_dw_uart.c \
+	src/exception/t_exception.c \
+	src/lib/t_logger.c \
+	src/lib/t_string.c \
+	src/lib/cache.c \
+	src/lib/rand.c \
+	src/lib/sort.c \
+	src/mem/t_mem.c \
+	src/mem/t_mem_test.c \
+	$(PCIE_SOURCES)
+
+# 汇编源文件
+ASM_SOURCES = \
+	src/boot/t_boot.S \
+	src/exception/t_exception.S \
+	src/lib/t_spinlock.S
+
+# 目标文件
+OBJS = $(SOURCES:.c=.o)
+ASM_OBJS = $(ASM_SOURCES:.S=.o)
+
+# 输出文件
+TARGET = testos-reflector
+ELF = $(TARGET).elf
+BIN = $(TARGET).bin
+UIMG = $(TARGET)_aarch64-opi5p.uimg
+
+# 默认目标
+all: $(UIMG)
+
+# 生成 U-Boot 镜像
+$(UIMG): $(BIN)
+	mkimage -A arm64 -O linux -T kernel -C none \
+		-a 0x00200000 -e 0x00200000 \
+		-n "TestOS-Reflector" -d $< $@
+
+# 生成二进制文件
+$(BIN): $(ELF)
+	$(OBJCOPY) -O binary $< $@
+
+# 链接生成 ELF
+$(ELF): $(OBJS) $(ASM_OBJS)
+	$(LD) $(LDFLAGS) -o $@ $^
+
+# 编译 C 文件
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# 编译汇编文件
+%.o: %.S
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# PCIe 驱动特定规则 (可选)
+pcie_dw_rockchip.o: pcie_dw_rockchip.c
+	@echo "Compiling PCIe driver..."
+	$(CC) $(CFLAGS) -DCONFIG_PCIE_DW_ROCKCHIP -c $< -o $@
+
+src/test_pcie_network.o: src/test_pcie_network.c
+	@echo "Compiling PCIe network test..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# 清理
+clean:
+	rm -f $(OBJS) $(ASM_OBJS) $(ELF) $(BIN) $(UIMG)
+	rm -f pcie_dw_rockchip.o src/test_pcie_network.o
+
+# 清理所有构建产物
+distclean: clean
+	rm -f build/*/*.o
+	find . -name "*.o" -delete
+
+# 显示配置
+info:
+	@echo "=== Build Configuration ==="
+	@echo "Cross Compiler: $(CC)"
+	@echo "CFLAGS: $(CFLAGS)"
+	@echo "LDFLAGS: $(LDFLAGS)"
+	@echo "PCIe Sources: $(PCIE_SOURCES)"
+	@echo "Target: $(TARGET)"
+	@echo "=========================="
+
+# 帮助信息
+help:
+	@echo "Available targets:"
+	@echo "  all        - Build everything (default)"
+	@echo "  clean      - Remove build artifacts"
+	@echo "  distclean  - Remove all build artifacts"
+	@echo "  info       - Show build configuration"
+	@echo "  help       - Show this help message"
+
+# 依赖关系生成 (可选)
+depend: $(SOURCES)
+	$(CC) $(CFLAGS) -MM $^ > .depend
+
+-include .depend
+
+.PHONY: all clean distclean info help depend
+
+# ==========================================
+# 调试和测试目标
+# ==========================================
+
+# 构建调试版本
+debug: CFLAGS += -DDEBUG -g3
+debug: clean all
+
+# 构建发布版本
+release: CFLAGS += -O3 -DNDEBUG
+release: clean all
+
+# 只编译 PCIe 驱动
+pcie-only: pcie_dw_rockchip.o src/test_pcie_network.o
+	@echo "PCIe driver compiled successfully"
+
+# 测试编译 (不链接)
+test-compile: $(OBJS)
+	@echo "All source files compiled successfully"
+
+# 生成汇编代码 (用于调试)
+asm: $(SOURCES)
+	$(CC) $(CFLAGS) -S $^
+
+# 查看符号表
+symbols: $(ELF)
+	$(CROSS_COMPILE)nm -n $< | less
+
+# 查看反汇编
+disasm: $(ELF)
+	$(CROSS_COMPILE)objdump -d $< | less
+
+# 查看段信息
+sections: $(ELF)
+	$(CROSS_COMPILE)readelf -S $<
+
+# 查看头信息
+headers: $(ELF)
+	$(CROSS_COMPILE)readelf -h $<
+
+# 静态分析
+analyze:
+	cppcheck --enable=all --inconclusive \
+		$(PCIE_INCLUDES) \
+		$(PCIE_SOURCES)
+
+# 代码格式化
+format:
+	clang-format -i $(PCIE_SOURCES) include/dev/pcie_test.h
+
+# ==========================================
+# 部署目标 (根据实际情况修改)
+# ==========================================
+
+# 复制到 TFTP 目录
+install-tftp: $(UIMG)
+	@echo "Installing to TFTP directory..."
+	cp $(UIMG) /var/lib/tftpboot/
+
+# 通过串口上传
+install-serial: $(UIMG)
+	@echo "Uploading via serial port..."
+	# 根据你的上传脚本修改
+	./tools/orangepi5/upload_flash.sh $(UIMG)
+
+# 制作启动盘
+install-sdcard: $(UIMG)
+	@echo "Installing to SD card..."
+	./tools/orangepi5/make_flash.sh $(UIMG)
+
+.PHONY: debug release pcie-only test-compile asm symbols disasm sections headers analyze format install-tftp install-serial install-sdcard

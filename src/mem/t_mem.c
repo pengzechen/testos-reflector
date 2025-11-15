@@ -50,8 +50,9 @@ void t_mem_init(size_t heap_size)
     free_list_head->next = NULL;
     free_list_head->prev = NULL;
 
-    logger_info("t_mem initialized: start=0x%lx, size=%lu KB\n", 
-               (unsigned long)heap_start, heap_size / 1024);
+    logger_info("t_mem initialized: start=0x%lx, size=%lu MB\n",
+                (unsigned long) heap_start,
+                heap_size / (1024 * 1024));
 }
 
 /**

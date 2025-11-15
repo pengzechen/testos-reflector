@@ -5,6 +5,7 @@
 #include "dev/t_dw_uart.h"
 #include "dev/t_timer.h"
 #include "dev/xmodem_dw_uart.h"
+#include "dev/pcie_test.h"
 #include "npu/rknpu.h"
 #include "dev/cru.h"
 #include "dev/scmi.h"
@@ -389,55 +390,11 @@ t_kernel_main(uint64_t id)
 
 
     timer_init();
-    // timer_dump_info();
-
-    // 启动多核
-    start_secondary_cpus();
-
-    {
-        // 最多等待 5 秒让所有副核就绪；全部就绪则提前结束等待
-        uint64_t freq        = timer_get_frequency();
-        uint64_t start_ticks = CNTPCT_EL0_READ();
-        uint64_t deadline    = start_ticks + 5ULL * freq;  // 5 秒超时
-
-        int all_online = 0;
-        while (CNTPCT_EL0_READ() < deadline) {
-            all_online = 1;
-            for (int i = 1; i < T_SMP_NUM; i++) {
-                if (cpu_online[i] == 0) {
-                    all_online = 0;
-                    break;
-                }
-            }
-            if (all_online)
-                break;
-            // 小幅让步，避免过度占用总线
-            asm volatile("nop");
-        }
-
-        if (all_online) {
-            logger_info("All %d secondary cores online within 5 seconds.\n", T_SMP_NUM - 1);
-        } else {
-            logger_warn("Timeout after 5 seconds: some secondary cores are not online.\n");
-            for (int i = 1; i < T_SMP_NUM; i++) {
-                if (cpu_online[i] == 0) {
-                    logger_warn("  - core %d NOT online\n", i);
-                }
-            }
-        }
-    }
-
 
     // 启用定时器
     timer_enable();
     enable_interrupts();  // daifclr 2
     logger_info("After enabling interrupts\n");
-
-    dw_uart_init();
-
-
-    t_run_printf_tests();
-
 
     // 随机数模块测试
     srand_tick();
@@ -451,31 +408,12 @@ t_kernel_main(uint64_t id)
     size_t heap_size = (1 << 28);  // 1 G
     t_mem_init(heap_size);
 
-#if 1
-    void t_mem_run_tests(void);
-    void t_mem_run_stress_tests(void);
-    t_mem_run_tests();
-    t_mem_run_stress_tests();
-#endif
-
-#if 0
-    {
-    // scmi 时钟
-    // todo fix.
-    // enable_scmi_clock(6);
-
-    // cru 时钟
-    // enable_rk3588_npu_clocks();
-
-    // RKNPU 初始化测试
-    rknpu_init();
-
-    // 测试
-    rknpu_test();
-
-    }
-#endif
-
+    // PCIe 网络测试
+    logger_info("\n========================================\n");
+    logger_info("Starting PCIe Network Test\n");
+    logger_info("========================================\n");
+    pcie_network_test_main();
+    logger_info("PCIe Network Test completed\n");
 
     while (1) {
         WFI();

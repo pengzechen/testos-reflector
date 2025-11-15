@@ -55,7 +55,22 @@
 // 10	Write-Through, no WA
 // 11	Write-Back, no WA
 
+/* 物理地址大小 (IPS) - TCR_EL1[34:32] */
+#define TCR_IPS_32BITS  (0ULL << 32)  /* 32 bits, 4GB */
+#define TCR_IPS_36BITS  (1ULL << 32)  /* 36 bits, 64GB */
+#define TCR_IPS_40BITS  (2ULL << 32)  /* 40 bits, 1TB */
+#define TCR_IPS_42BITS  (3ULL << 32)  /* 42 bits, 4TB */
+#define TCR_IPS_44BITS  (4ULL << 32)  /* 44 bits, 16TB */
+#define TCR_IPS_48BITS  (5ULL << 32)  /* 48 bits, 256TB */
 
-#define TCR_EL1 (TCR_T0SZ(64 - 48) | TCR_T1SZ(64 - 48) | TCR_TG0(0) | TCR_TG1(2) | TCR_SH0(3))
+/* TCR_EL1 完整配置 */
+#define TCR_EL1 (TCR_T0SZ(64 - 48) |      /* 48位虚拟地址 */ \
+                 TCR_T1SZ(64 - 48) |      /* 48位虚拟地址 */ \
+                 TCR_TG0(0) |             /* 4KB 页 */ \
+                 TCR_TG1(2) |             /* 4KB 页 */ \
+                 TCR_SH0(3) |             /* Inner shareable */ \
+                 TCR_IRGN0(1) |           /* Inner Write-Back Write-Allocate */ \
+                 TCR_ORGN0(1) |           /* Outer Write-Back Write-Allocate */ \
+                 TCR_IPS_48BITS)          /* 48位物理地址 */
 
 #endif // _TCR_H

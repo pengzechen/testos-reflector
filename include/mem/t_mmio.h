@@ -7,34 +7,48 @@
 static inline uint8_t
 read8(const volatile void *addr)
 {
-    return *(const volatile uint8_t *) addr;
+    uint8_t val;
+    DSB_SY();
+    val = *(const volatile uint8_t *) addr;
+    DSB_SY();
+    return val;
 }
 
 static inline void
 write8(uint8_t value, volatile void *addr)
 {
+    DSB_SY();
     *(volatile uint8_t *) addr = value;
+    DSB_SY();
 }
 
 static inline uint16_t
 read16(const volatile void *addr)
 {
-    return *(const volatile uint16_t *) addr;
+    uint16_t val;
+    DSB_SY();
+    val = *(const volatile uint16_t *) addr;
+    DSB_SY();
+    return val;
 }
 
 static inline void
 write16(uint16_t value, volatile void *addr)
 {
+    DSB_SY();
     *(volatile uint16_t *) addr = value;
+    DSB_SY();
 }
 
 
 static inline uint32_t
 read32(const volatile void *addr)
 {
+    uint32_t val;
     DSB_SY();
-    return *(const volatile uint32_t *) addr;
+    val = *(const volatile uint32_t *) addr;
     DSB_SY();
+    return val;
 }
 
 static inline void
@@ -48,13 +62,19 @@ write32(uint32_t value, volatile void *addr)
 static inline uint64_t
 read64(const volatile void *addr)
 {
-    return *(const volatile uint64_t *) addr;
+    uint64_t val;
+    DSB_SY();
+    val = *(const volatile uint64_t *) addr;
+    DSB_SY();
+    return val;
 }
 
 static inline void
 write64(uint64_t value, volatile void *addr)
 {
+    DSB_SY();
     *(volatile uint64_t *) addr = value;
+    DSB_SY();
 }
 
 #endif  // __MMIO_H__

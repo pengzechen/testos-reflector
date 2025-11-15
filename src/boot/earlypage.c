@@ -54,6 +54,14 @@ init_page_table()
     set_block_entry(&pt1[2], 0x80000000, PTE_NORMAL_MEMORY, 0);  // 普通内存
 
     set_block_entry(&pt1[3], 0xc0000000, PTE_DEVICE_MEMORY, 0);  // 设备内存
+
+    // 映射 PCIe DBI 地址空间 (0xa00000000 - 0xa3fffffff, 约40-41GB)
+    // 0xa40c00000 / 0x40000000 = 41, 所以在 L0[41] 位置
+    // 但由于我们只有一个 L1 表,我们需要映射整个 512GB 块
+    // 实际上,对于 L1 1GB 块映射:0xa40c00000 需要在索引 41 处
+    // logger_info("Mapping PCIe DBI region: pt1[41] = 0x%llx\n", 0xa40000000UL | PTE_DEVICE_MEMORY);
+    set_block_entry(&pt1[41], 0xa40000000UL, PTE_DEVICE_MEMORY, 0);  // PCIe DBI 区域
+    // logger_info("Page table entry pt1[41] = 0x%llx\n", pt1[41]);
 }
 
 void
