@@ -60,6 +60,7 @@ init_page_table()
     // 但由于我们只有一个 L1 表,我们需要映射整个 512GB 块
     // 实际上,对于 L1 1GB 块映射:0xa40c00000 需要在索引 41 处
     // logger_info("Mapping PCIe DBI region: pt1[41] = 0x%llx\n", 0xa40000000UL | PTE_DEVICE_MEMORY);
+    set_block_entry(&pt1[39], 0x9c0000000UL, PTE_DEVICE_MEMORY, 0);
     set_block_entry(&pt1[41], 0xa40000000UL, PTE_DEVICE_MEMORY, 0);  // PCIe DBI 区域
     // logger_info("Page table entry pt1[41] = 0x%llx\n", pt1[41]);
 }
