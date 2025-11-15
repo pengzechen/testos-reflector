@@ -156,6 +156,11 @@ static uint32_t          tx_idx           = 0;
 static uint32_t          rx_idx           = 0;
 static uint8_t           my_mac[ETH_ALEN] = {0x00, 0xe0, 0x4c, 0x68, 0x12, 0x34};
 
+static char tx_buf0[1024];
+static char tx_buf1[1024];
+static char rx_buf0[2048];
+static char rx_buf1[2048];
+
 /* Helper functions for MMIO */
 static inline uint8_t
 rtl_read8(uint32_t reg)
@@ -685,42 +690,44 @@ rtl8125_init(uint64_t mmio_base)
 
     /* For simplicity, using static allocation in real implementation
      * these should be DMA-able memory regions */
-    // tx_ring = (rtl_desc_t *)0x40200000;  /* Example physical address */
-    // rx_ring = (rtl_desc_t *)0x40201000;
+    tx_ring = (rtl_desc_t *)0x50200000;  /* Example physical address */
+    rx_ring = (rtl_desc_t *)0x50201000;
+    memset((tx_ring), 0, sizeof(rtl_desc_t));
+    memset((rx_ring), 0, sizeof(rtl_desc_t));
 
     logger_warn("  Note: Using placeholder addresses for descriptors\n");
     logger_warn("  In production, allocate proper DMA memory!\n");
 
     /* Setup TX descriptors */
     logger_info("  Setting up TX ring...\n");
-    // for (i = 0; i < NUM_TX_DESC; i++) {
-    //     tx_ring[i].status = 0;
-    //     tx_ring[i].vlan_tag = 0;
-    //     tx_ring[i].buf_addr_lo = 0x40300000 + (i * TX_BUF_SIZE);
-    //     tx_ring[i].buf_addr_hi = 0;
-    //     tx_buffers[i] = (uint8_t *)(0x40300000UL + (i * TX_BUF_SIZE));
-    // }
-    // tx_ring[NUM_TX_DESC - 1].status |= DESC_EOR;
+    for (i = 0; i < NUM_TX_DESC; i++) {
+        tx_ring[i].status = 0;
+        tx_ring[i].vlan_tag = 0;
+        tx_ring[i].buf_addr_lo = 0x50300000 + (i * TX_BUF_SIZE);
+        tx_ring[i].buf_addr_hi = 0;
+        tx_buffers[i] = (uint8_t *)(0x50300000UL + (i * TX_BUF_SIZE));
+    }
+    tx_ring[NUM_TX_DESC - 1].status |= DESC_EOR;
 
     /* Setup RX descriptors */
     logger_info("  Setting up RX ring...\n");
-    // for (i = 0; i < NUM_RX_DESC; i++) {
-    //     rx_ring[i].status = DESC_OWN | RX_BUF_SIZE;
-    //     rx_ring[i].vlan_tag = 0;
-    //     rx_ring[i].buf_addr_lo = 0x40400000 + (i * RX_BUF_SIZE);
-    //     rx_ring[i].buf_addr_hi = 0;
-    //     rx_buffers[i] = (uint8_t *)(0x40400000UL + (i * RX_BUF_SIZE));
-    // }
-    // rx_ring[NUM_RX_DESC - 1].status |= DESC_EOR;
+    for (i = 0; i < NUM_RX_DESC; i++) {
+        rx_ring[i].status = DESC_OWN | RX_BUF_SIZE;
+        rx_ring[i].vlan_tag = 0;
+        rx_ring[i].buf_addr_lo = 0x50400000 + (i * RX_BUF_SIZE);
+        rx_ring[i].buf_addr_hi = 0;
+        rx_buffers[i] = (uint8_t *)(0x50400000UL + (i * RX_BUF_SIZE));
+    }
+    rx_ring[NUM_RX_DESC - 1].status |= DESC_EOR;
 
     /* Write descriptor addresses to NIC */
-    // rtl_write32(RTL8125_TxDescStartAddr, 0x40200000);
-    // rtl_write32(RTL8125_TxDescStartAddrH, 0);
-    // rtl_write32(RTL8125_RxDescStartAddr, 0x40201000);
-    // rtl_write32(RTL8125_RxDescStartAddrH, 0);
+    rtl_write32(RTL8125_TxDescStartAddr, 0x50200000);
+    rtl_write32(RTL8125_TxDescStartAddrH, 0);
+    rtl_write32(RTL8125_RxDescStartAddr, 0x50201000);
+    rtl_write32(RTL8125_RxDescStartAddrH, 0);
 
-    logger_debug("  TX descriptor ring at: 0x40200000\n");
-    logger_debug("  RX descriptor ring at: 0x40201000\n");
+    logger_debug("  TX descriptor ring at: 0x50200000\n");
+    logger_debug("  RX descriptor ring at: 0x50201000\n");
 
     /* Configure TX */
     logger_info("  Configuring TX...\n");
@@ -755,22 +762,35 @@ rtl8125_init(uint64_t mmio_base)
 static int
 rtl8125_send_packet(uint8_t *data, uint32_t len)
 {
-    uint32_t timeout = 10000;
-
-    logger_debug("=== Sending packet ===\n");
-    logger_debug("  Length: %d bytes\n", len);
-
-    /* For demo purposes, just log what we would send */
-    logger_debug("  First 32 bytes of packet:\n");
-    for (int i = 0; i < 32 && i < len; i += 8) {
-        logger_debug("    ");
-        for (int j = 0; j < 8 && (i + j) < len; j++) {
-            logger_debug("%02x ", data[i + j]);
-        }
-        logger_debug("\n");
+    if (!tx_ring || !tx_buffers[tx_idx]) {
+        logger_error("TX ring/buffer not initialized!\n");
+        return -1;
+    }
+    if (len > TX_BUF_SIZE) {
+        logger_error("Packet too large for TX buffer!\n");
+        return -1;
     }
 
-    logger_warn("  Note: Actual TX not implemented (requires DMA setup)\n");
+    // 拷贝数据到当前TX缓冲区
+    memcpy_local(tx_buffers[tx_idx], data, len);
+
+    // 设置描述符 OWN/FS/LS/长度
+    tx_ring[tx_idx].status = DESC_OWN | DESC_FS | DESC_LS | len;
+    // 触发硬件发送
+    rtl_write8(RTL8125_TxPoll, 0x40);
+
+    // 等待发送完成（轮询OWN位）
+    uint32_t timeout = 10000;
+    while ((tx_ring[tx_idx].status & DESC_OWN) && timeout--) {
+        udelay(10);
+    }
+    if (tx_ring[tx_idx].status & DESC_OWN) {
+        logger_error("TX timeout!\n");
+        return -1;
+    }
+
+    // 移动到下一个描述符
+    tx_idx = (tx_idx + 1) % NUM_TX_DESC;
     return 0;
 }
 
@@ -780,12 +800,28 @@ rtl8125_send_packet(uint8_t *data, uint32_t len)
 static int
 rtl8125_recv_packet(uint8_t *buffer, uint32_t *len, uint32_t timeout_ms)
 {
-    logger_debug("=== Checking for received packets ===\n");
-    logger_debug("  Timeout: %d ms\n", timeout_ms);
+    if (!rx_ring || !rx_buffers[rx_idx]) {
+        logger_error("RX ring/buffer not initialized!\n");
+        return -1;
+    }
+    uint32_t timeout = timeout_ms * 100;
+    while ((rx_ring[rx_idx].status & DESC_OWN) && timeout--) {
+        udelay(10);
+    }
+    if (rx_ring[rx_idx].status & DESC_OWN) {
+        // 超时未收到包
+        return -1;
+    }
+    // 获取包长度
+    uint32_t pkt_len = rx_ring[rx_idx].status & 0x3FFF;
+    if (pkt_len > RX_BUF_SIZE) pkt_len = RX_BUF_SIZE;
+    memcpy_local(buffer, rx_buffers[rx_idx], pkt_len);
+    *len = pkt_len;
 
-    /* For demo purposes, simulate no packet received */
-    logger_warn("  Note: Actual RX not implemented (requires DMA setup)\n");
-    return -1;
+    // 清除OWN，重新赋值让硬件可用
+    rx_ring[rx_idx].status = DESC_OWN | RX_BUF_SIZE;
+    rx_idx = (rx_idx + 1) % NUM_RX_DESC;
+    return 0;
 }
 
 /**
@@ -905,6 +941,11 @@ test_dw_pcie_atu(void)
     uint64_t rtl_mmio_virt;
     int      ret;
 
+    tx_buffers[0] = tx_buf0;
+    tx_buffers[1] = tx_buf1;
+    rx_buffers[0] = rx_buf0;
+    rx_buffers[1] = rx_buf1;
+
     logger_info("\n");
     logger_info("========================================\n");
     logger_info("=== Testing DesignWare PCIe ATU ===\n");
@@ -1000,7 +1041,7 @@ test_dw_pcie_atu(void)
 
     /* Wait for reply */
     logger_info("Waiting for ping reply...\n");
-    uint8_t  rx_buffer[2048];
+    uint8_t  rx_buffer[1024];
     uint32_t rx_len;
 
     ret = rtl8125_recv_packet(rx_buffer, &rx_len, 1000);
