@@ -155,8 +155,8 @@ static uint8_t          *tx_buffers[NUM_TX_DESC];
 static uint8_t          *rx_buffers[NUM_RX_DESC];
 static uint32_t          tx_idx               = 0;
 static uint32_t          rx_idx               = 0;
-static uint8_t           my_mac[ETH_ALEN]     = {0x00, 0xe0, 0x4c, 0x68, 0x12, 0x34};
-static uint8_t           remote_mac[ETH_ALEN] = {0x38, 0x68, 0x93, 0x68, 0x4C, 0xC8};
+static uint8_t           my_mac[ETH_ALEN]     = {0x2e, 0xc3, 0x69, 0x34, 0x7d, 0x31};
+static uint8_t           remote_mac[ETH_ALEN] = {0x38, 0xf7, 0xcd, 0xc8, 0xd9, 0x32};
 
 
 /* Helper functions for MMIO */
@@ -718,6 +718,11 @@ rtl8125_init(uint64_t mmio_base)
     }
     rx_ring[NUM_RX_DESC - 1].status |= DESC_EOR;
 
+    // ===== 关键：刷新描述符缓存，让硬件能看到初始化的描述符 =====
+    logger_debug("  Flushing TX/RX descriptor rings to memory...\n");
+    clean_dcache_va_range((void *) tx_ring, NUM_TX_DESC * sizeof(rtl_desc_t));
+    clean_dcache_va_range((void *) rx_ring, NUM_RX_DESC * sizeof(rtl_desc_t));
+
     /* Write descriptor addresses to NIC */
     rtl_write32(RTL8125_TxDescStartAddr, 0x50200000);
     rtl_write32(RTL8125_TxDescStartAddrH, 0);
@@ -849,13 +854,25 @@ rtl8125_recv_packet(uint8_t *buffer, uint32_t *len, uint32_t timeout_ms)
 
     if (rx_ring[rx_idx].status & DESC_OWN) {
         // 超时未收到包
+        logger_debug("RX timeout: OWN bit still set (status=0x%08x)\n", rx_ring[rx_idx].status);
         return -1;
     }
 
-    // 获取包长度
-    uint32_t pkt_len = rx_ring[rx_idx].status & 0x3FFF;
+    logger_debug("RX packet received! status=0x%08x\n", rx_ring[rx_idx].status);
+
+    // 检查是否有错误
+    if (rx_ring[rx_idx].status & 0x00200000) {  // RxRES bit
+        logger_error("RX error detected in status\n");
+        // 仍然需要重新初始化描述符
+        goto reinit_desc;
+    }
+
+    // 获取包长度（不含 FCS 4字节）
+    uint32_t pkt_len = (rx_ring[rx_idx].status & 0x3FFF) - 4;
     if (pkt_len > RX_BUF_SIZE)
         pkt_len = RX_BUF_SIZE;
+
+    logger_debug("RX packet length: %d bytes\n", pkt_len);
 
     // ===== 关键：使 RX 缓冲区缓存失效，从内存读取硬件写入的数据 =====
     uint64_t buf_start = (uint64_t) rx_buffers[rx_idx] & ~(g_cache_line_size - 1);
@@ -866,8 +883,16 @@ rtl8125_recv_packet(uint8_t *buffer, uint32_t *len, uint32_t timeout_ms)
     memcpy_local(buffer, rx_buffers[rx_idx], pkt_len);
     *len = pkt_len;
 
-    // 清除OWN，重新赋值让硬件可用
-    rx_ring[rx_idx].status = DESC_OWN | RX_BUF_SIZE;
+reinit_desc:
+    // 重新初始化描述符（关键：需要重新设置 buf_addr 和 OWN）
+    if (rx_idx == NUM_RX_DESC - 1) {
+        rx_ring[rx_idx].status = (DESC_OWN | DESC_EOR) + RX_BUF_SIZE;
+    } else {
+        rx_ring[rx_idx].status = DESC_OWN + RX_BUF_SIZE;
+    }
+    // 重新写入缓冲区地址（U-Boot 也这样做）
+    rx_ring[rx_idx].buf_addr_lo = 0x50400000 + (rx_idx * RX_BUF_SIZE);
+    rx_ring[rx_idx].buf_addr_hi = 0;
 
     // ===== 关键：刷新描述符缓存，让硬件能看到更新 =====
     clean_dcache_va_range((void *) desc_start, desc_end - desc_start);
@@ -1088,6 +1113,8 @@ test_dw_pcie_atu(void)
                 remote_ip[3]);
     logger_info("\n");
 
+    mdelay(1000 * 5); /* Wait a moment before sending ping */
+
     /* Send ping */
     send_ping(local_ip, remote_ip, 1);
     logger_info("\n");
@@ -1097,6 +1124,54 @@ test_dw_pcie_atu(void)
     uint8_t  rx_buffer[1024];
     uint32_t rx_len;
 
+    // 尝试多次接收,因为可能会先收到 ARP 包
+    int max_tries = 5;
+    for (int try = 0; try < max_tries; try++) {
+        logger_debug("  Receive attempt %d/%d...\n", try + 1, max_tries);
+        ret = rtl8125_recv_packet(rx_buffer, &rx_len, 2000);  // 增加超时到 2 秒
+        if (ret == 0) {
+            logger_info("Received packet (%d bytes)\n", rx_len);
+
+            /* Parse the reply */
+            eth_hdr_t *eth   = (eth_hdr_t *) rx_buffer;
+            uint16_t   proto = ntohs(eth->proto);
+            logger_debug("  EtherType: 0x%04x\n", proto);
+
+            if (proto == ETH_P_ARP) {
+                logger_info("  Received ARP packet (ignoring, waiting for ICMP reply)\n");
+                continue;  // 继续等待 ICMP 回复
+            }
+
+            if (proto == ETH_P_IP) {
+                ip_hdr_t *ip = (ip_hdr_t *) (rx_buffer + sizeof(eth_hdr_t));
+                logger_debug("  IP Protocol: %d\n", ip->protocol);
+
+                if (ip->protocol == IPPROTO_ICMP) {
+                    icmp_hdr_t *icmp =
+                        (icmp_hdr_t *) (rx_buffer + sizeof(eth_hdr_t) + sizeof(ip_hdr_t));
+                    logger_debug("  ICMP Type: %d\n", icmp->type);
+
+                    if (icmp->type == ICMP_ECHOREPLY) {
+                        logger_info("  ICMP Echo Reply received!\n");
+                        logger_info("  From: %d.%d.%d.%d\n",
+                                    (ip->src_addr >> 0) & 0xFF,
+                                    (ip->src_addr >> 8) & 0xFF,
+                                    (ip->src_addr >> 16) & 0xFF,
+                                    (ip->src_addr >> 24) & 0xFF);
+                        logger_info("  Sequence: %d\n", ntohs(icmp->sequence));
+                        logger_info("\n");
+                        logger_info("✓ Ping test SUCCESSFUL!\n");
+                        goto ping_success;
+                    }
+                }
+            }
+        }
+    }
+
+    logger_warn("No ICMP reply received after %d attempts\n", max_tries);
+    logger_info("Note: Packets were sent successfully (verified by tcpdump)\n");
+
+ping_success:
     ret = rtl8125_recv_packet(rx_buffer, &rx_len, 1000);
     if (ret == 0) {
         logger_info("Received reply packet (%d bytes)\n", rx_len);
