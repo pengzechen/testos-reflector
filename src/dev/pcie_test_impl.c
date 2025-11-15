@@ -480,7 +480,7 @@ rtl8125_init(uint64_t mmio_base)
     for (i = 0; i < 6; i++) {
         my_mac[i] = rtl_read8(RTL8125_MAC0 + i);
     }
-    logger_info("  MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+    logger_info("  MAC Address: %x:%x:%x:%x:%x:%x\n",
                 my_mac[0],
                 my_mac[1],
                 my_mac[2],
@@ -801,7 +801,7 @@ test_dw_pcie_atu(void)
 
     /* Verify we can read from the BAR */
     uint32_t test_val = read32((void *) rtl_mmio_virt);
-    logger_info("  Test read from BAR: 0x%08x\n", test_val);
+    logger_info("  Test read from BAR: 0x%lx\n", test_val);
     logger_info("\n");
 
     /* Step 5: Initialize RTL8125 */

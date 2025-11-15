@@ -39,12 +39,12 @@ handle_sync_exception(uint64_t *stack_pointer)
 
     logger("el1 esr: %x\n", el1_esr);
     logger("ec: %x\n", ec);
-    logger("far_el1: %x\n", read_far_el1());
+    logger("far_el1: %lx\n", read_far_el1());
 
     logger("This is handle_sync_exception: \n");
     for (int i = 0; i < 31; i++) {
         uint64_t value = el1_ctx->r[i];
-        logger("General-purpose register: %d, value: %x\n", i, value);
+        logger("General-purpose register: %d, value: %lx\n", i, value);
     }
 
     uint64_t elr_el1_value = el1_ctx->elr;

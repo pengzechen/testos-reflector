@@ -409,7 +409,7 @@ t_kernel_main(uint64_t id)
     t_mem_init(heap_size);
 
     // PCIe 网络测试
-    logger_info("\n========================================\n");
+    logger_info("========================================\n");
     logger_info("Starting PCIe Network Test\n");
     logger_info("========================================\n");
     pcie_network_test_main();

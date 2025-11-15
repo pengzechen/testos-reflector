@@ -17,7 +17,6 @@
 void
 pcie_network_test_main(void)
 {
-    logger_info("\n\n");
     logger_info("*************************************************\n");
     logger_info("*                                               *\n");
     logger_info("*  PCIe ATU and RTL8125 Network Test Suite     *\n");
