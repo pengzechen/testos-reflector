@@ -3,6 +3,15 @@
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Library General Public License version 2.
+ *
+ * Format specifiers for 64-bit values:
+ *   uint64_t/int64_t: Use %llu, %lld, %llx (NOT %lu, %ld, %lx)
+ *   size_t/ssize_t:   Use %zu, %zd (mapped to long on AArch64)
+ *   uintptr_t:        Use %p for pointers
+ *
+ * Examples:
+ *   uint64_t val = 0x123456789abcdef0ULL;
+ *   logger("Value: 0x%llx (%llu)\n", val, val);
  */
 
 #include <stdarg.h>
@@ -545,6 +554,31 @@ t_run_printf_tests(void)
     // T5: %% 测试
     (void) my_snprintf(buf, sizeof(buf), "rate: 100%%");
     dw_uart_putstr("T5: expect [rate: 100%] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
+
+    memset(buf, 0, 64);
+
+    // T6: uint64_t 测试 (%llu)
+    uint64_t u64_val = 0x123456789abcdef0ULL;
+    (void) my_snprintf(buf, sizeof(buf), "%llu", u64_val);
+    dw_uart_putstr("T6: expect [1311768467463790320] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
+
+    memset(buf, 0, 64);
+
+    // T7: uint64_t 十六进制测试 (%llx)
+    (void) my_snprintf(buf, sizeof(buf), "0x%llx", u64_val);
+    dw_uart_putstr("T7: expect [0x123456789abcdef0] got [");
+    dw_uart_putstr(buf);
+    dw_uart_putstr("]\n");
+
+    memset(buf, 0, 64);
+
+    // T8: uint64_t 十六进制测试 (%#llx)
+    (void) my_snprintf(buf, sizeof(buf), "%#llx", u64_val);
+    dw_uart_putstr("T8: expect [0x123456789abcdef0] got [");
     dw_uart_putstr(buf);
     dw_uart_putstr("]\n");
 }

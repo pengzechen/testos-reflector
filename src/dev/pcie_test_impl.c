@@ -17,6 +17,25 @@
 /* PCIe DBI base address for RK3588 */
 #define DBI_BASE 0xa40c00000UL
 
+/* PCIe Configuration Space Registers */
+#define PCIE_CFG_VENDOR_ID      0x00
+#define PCIE_CFG_COMMAND        0x04
+#define PCIE_CFG_STATUS         0x06
+#define PCIE_CFG_CLASS_REV      0x08
+#define PCIE_CFG_BAR0           0x10
+
+/* PCIe Command Register bits */
+#define PCIE_CMD_IO_ENABLE      (1 << 0)  /* I/O Space Enable */
+#define PCIE_CMD_MEM_ENABLE     (1 << 1)  /* Memory Space Enable */
+#define PCIE_CMD_BUS_MASTER     (1 << 2)  /* Bus Master Enable */
+#define PCIE_CMD_SPECIAL_CYCLES (1 << 3)  /* Special Cycles Enable */
+#define PCIE_CMD_MWI_ENABLE     (1 << 4)  /* Memory Write and Invalidate */
+#define PCIE_CMD_VGA_SNOOP      (1 << 5)  /* VGA Palette Snoop */
+#define PCIE_CMD_PARITY_ERROR   (1 << 6)  /* Parity Error Response */
+#define PCIE_CMD_SERR_ENABLE    (1 << 8)  /* SERR# Enable */
+#define PCIE_CMD_FAST_B2B       (1 << 9)  /* Fast Back-to-Back Enable */
+#define PCIE_CMD_INT_DISABLE    (1 << 10) /* Interrupt Disable */
+
 /* ATU Unroll mode offsets (DBI + 0x300000) */
 #define ATU_UNROLL_BASE_OFFSET 0x300000UL
 
@@ -376,19 +395,104 @@ dw_pcie_setup_atu(uint64_t dbi_base,
 }
 
 /**
+ * pcie_config_read32 - Read 32-bit value from PCIe config space
+ * 
+ * This function temporarily maps ATU Region 1 to Config space,
+ * reads the value, then maps it back to Memory space.
+ */
+static uint32_t
+pcie_config_read32(uint64_t dbi_base, uint64_t cfg_base, uint64_t bar_phys, 
+                   uint32_t offset, bool restore_memory)
+{
+    uint32_t val;
+    int ret;
+
+    /* Map ATU Region 1 to Config space for reading */
+    ret = dw_pcie_setup_atu(dbi_base,
+                            PCIE_ATU_REGION_INDEX1,
+                            PCIE_ATU_TYPE_CFG0,
+                            0xf3000000UL,  /* CPU address */
+                            0x00000000UL,  /* PCIe address */
+                            0x100000UL);   /* 1MB */
+    if (ret != 0) {
+        logger_error("Failed to map ATU to Config space for read!\n");
+        return 0xFFFFFFFF;
+    }
+
+    /* Read the value */
+    val = read32((void *) (cfg_base + offset));
+
+    /* Restore ATU Region 1 to Memory space if requested */
+    if (restore_memory && bar_phys != 0) {
+        ret = dw_pcie_setup_atu(dbi_base,
+                                PCIE_ATU_REGION_INDEX1,
+                                PCIE_ATU_TYPE_MEM,
+                                0x9c0100000UL, /* CPU address */
+                                bar_phys,      /* PCIe BAR address */
+                                0x10000UL);    /* 64KB */
+        if (ret != 0) {
+            logger_error("Failed to restore ATU to Memory space!\n");
+        }
+    }
+
+    return val;
+}
+
+/**
+ * pcie_config_write32 - Write 32-bit value to PCIe config space
+ */
+static void
+pcie_config_write32(uint64_t dbi_base, uint64_t cfg_base, uint64_t bar_phys,
+                    uint32_t offset, uint32_t value, bool restore_memory)
+{
+    int ret;
+
+    /* Map ATU Region 1 to Config space for writing */
+    ret = dw_pcie_setup_atu(dbi_base,
+                            PCIE_ATU_REGION_INDEX1,
+                            PCIE_ATU_TYPE_CFG0,
+                            0xf3000000UL,
+                            0x00000000UL,
+                            0x100000UL);
+    if (ret != 0) {
+        logger_error("Failed to map ATU to Config space for write!\n");
+        return;
+    }
+
+    /* Write the value */
+    write32(value, (void *) (cfg_base + offset));
+
+    /* Restore ATU Region 1 to Memory space if requested */
+    if (restore_memory && bar_phys != 0) {
+        ret = dw_pcie_setup_atu(dbi_base,
+                                PCIE_ATU_REGION_INDEX1,
+                                PCIE_ATU_TYPE_MEM,
+                                0x9c0100000UL,
+                                bar_phys,
+                                0x10000UL);
+        if (ret != 0) {
+            logger_error("Failed to restore ATU to Memory space!\n");
+        }
+    }
+}
+
+/**
  * pcie_scan_bus - Scan PCIe bus for devices
+ * 
+ * Uses pcie_config_read32 which temporarily switches ATU Region 1 to Config mode
  */
 static int
-pcie_scan_bus(uint64_t cfg_base, uint32_t *vendor_id, uint32_t *device_id, uint32_t *class_code)
+pcie_scan_bus(uint64_t dbi_base, uint64_t cfg_base, uint32_t *vendor_id, 
+              uint32_t *device_id, uint32_t *class_code)
 {
-    volatile uint32_t *cfg = (volatile uint32_t *) cfg_base;
-    uint32_t           val;
+    uint32_t val;
 
     logger_info("=== Scanning PCIe Bus ===\n");
+    logger_info("  DBI base: 0x%llx\n", dbi_base);
     logger_info("  Config base: 0x%llx\n", cfg_base);
 
-    /* Read Vendor ID and Device ID */
-    val        = read32((void *) cfg_base);
+    /* Read Vendor ID and Device ID (offset 0x00) */
+    val        = pcie_config_read32(dbi_base, cfg_base, 0, 0x00, false);
     *vendor_id = val & 0xFFFF;
     *device_id = (val >> 16) & 0xFFFF;
 
@@ -400,8 +504,8 @@ pcie_scan_bus(uint64_t cfg_base, uint32_t *vendor_id, uint32_t *device_id, uint3
         return -1;
     }
 
-    /* Read Class Code */
-    val         = read32((void *) (cfg_base + 0x08));
+    /* Read Class Code (offset 0x08) */
+    val         = pcie_config_read32(dbi_base, cfg_base, 0, 0x08, false);
     *class_code = val >> 8;
 
     logger_info("  Class Code: 0x%06x\n", *class_code);
@@ -411,27 +515,80 @@ pcie_scan_bus(uint64_t cfg_base, uint32_t *vendor_id, uint32_t *device_id, uint3
 }
 
 /**
- * pcie_get_bar_info - Get BAR information
+ * pcie_enable_device - Enable PCIe device (Memory Space, Bus Master)
+ * 
+ * Uses pcie_config_read32/write32 which temporarily switches ATU Region 1
  */
 static int
-pcie_get_bar_info(uint64_t cfg_base, uint32_t bar_num, uint64_t *bar_addr, uint64_t *bar_size)
+pcie_enable_device(uint64_t dbi_base, uint64_t cfg_base, uint64_t bar_phys)
 {
-    volatile uint32_t *cfg        = (volatile uint32_t *) cfg_base;
-    uint32_t           bar_offset = 0x10 + (bar_num * 4);
-    uint32_t           bar_val, bar_orig, size_mask;
+    uint32_t cmd_reg;
+    uint16_t cmd_val, status_val;
+
+    logger_info("=== Enabling PCIe Device ===\n");
+
+    /* Read current Command Register (offset 0x04, 16-bit) */
+    cmd_reg    = pcie_config_read32(dbi_base, cfg_base, bar_phys, PCIE_CFG_COMMAND, false);
+    cmd_val    = cmd_reg & 0xFFFF;
+    status_val = (cmd_reg >> 16) & 0xFFFF;
+
+    logger_info("  Original Command: 0x%04x\n", cmd_val);
+    logger_info("  Original Status:  0x%04x\n", status_val);
+
+    /* Enable Memory Space, Bus Master, and I/O Space */
+    cmd_val |= PCIE_CMD_MEM_ENABLE;   /* Enable Memory Space access */
+    cmd_val |= PCIE_CMD_BUS_MASTER;   /* Enable Bus Master (DMA) */
+    cmd_val |= PCIE_CMD_IO_ENABLE;    /* Enable I/O Space access */
+    cmd_val &= ~PCIE_CMD_INT_DISABLE; /* Enable interrupts */
+
+    /* Write back Command Register (preserve Status register in upper 16 bits) */
+    cmd_reg = (status_val << 16) | cmd_val;
+    pcie_config_write32(dbi_base, cfg_base, bar_phys, PCIE_CFG_COMMAND, cmd_reg, false);
+
+    /* Read back to verify */
+    cmd_reg = pcie_config_read32(dbi_base, cfg_base, bar_phys, PCIE_CFG_COMMAND, true);
+    cmd_val = cmd_reg & 0xFFFF;
+
+    logger_info("  New Command: 0x%04x\n", cmd_val);
+    logger_info("    Memory Space Enable: %s\n", (cmd_val & PCIE_CMD_MEM_ENABLE) ? "YES" : "NO");
+    logger_info("    Bus Master Enable:   %s\n", (cmd_val & PCIE_CMD_BUS_MASTER) ? "YES" : "NO");
+    logger_info("    I/O Space Enable:    %s\n", (cmd_val & PCIE_CMD_IO_ENABLE) ? "YES" : "NO");
+    logger_info("    Interrupt Disable:   %s\n", (cmd_val & PCIE_CMD_INT_DISABLE) ? "YES" : "NO");
+
+    if (!(cmd_val & PCIE_CMD_MEM_ENABLE)) {
+        logger_error("  Failed to enable Memory Space!\n");
+        return -1;
+    }
+
+    logger_info("  Device enabled successfully!\n");
+    return 0;
+}
+
+
+/**
+ * pcie_get_bar_info - Get BAR information
+ * 
+ * Uses pcie_config_read32/write32 which temporarily switches ATU Region 1
+ */
+static int
+pcie_get_bar_info(uint64_t dbi_base, uint64_t cfg_base, uint32_t bar_num, 
+                  uint64_t *bar_addr, uint64_t *bar_size)
+{
+    uint32_t bar_offset = 0x10 + (bar_num * 4);
+    uint32_t bar_val, bar_orig, size_mask;
 
     logger_info("=== Reading BAR%d Information ===\n", bar_num);
 
     /* Read original BAR value */
-    bar_orig = read32((void *) (cfg_base + bar_offset));
+    bar_orig = pcie_config_read32(dbi_base, cfg_base, 0, bar_offset, false);
     logger_debug("  Original BAR value: 0x%08x\n", bar_orig);
 
     /* Write all 1s to determine size */
-    write32(0xFFFFFFFF, (void *) (cfg_base + bar_offset));
-    bar_val = read32((void *) (cfg_base + bar_offset));
+    pcie_config_write32(dbi_base, cfg_base, 0, bar_offset, 0xFFFFFFFF, false);
+    bar_val = pcie_config_read32(dbi_base, cfg_base, 0, bar_offset, false);
 
     /* Restore original value */
-    write32(bar_orig, (void *) (cfg_base + bar_offset));
+    pcie_config_write32(dbi_base, cfg_base, 0, bar_offset, bar_orig, false);
 
     /* Calculate size */
     if (bar_val & 0x1) {
@@ -450,7 +607,7 @@ pcie_get_bar_info(uint64_t cfg_base, uint32_t bar_num, uint64_t *bar_addr, uint6
         /* Check if 64-bit BAR */
         if ((bar_orig & 0x6) == 0x4) {
             logger_info("  64-bit BAR detected\n");
-            uint32_t bar_upper = read32((void *) (cfg_base + bar_offset + 4));
+            uint32_t bar_upper = pcie_config_read32(dbi_base, cfg_base, 0, bar_offset + 4, false);
             *bar_addr |= ((uint64_t) bar_upper << 32);
         }
     }
@@ -751,23 +908,9 @@ test_dw_pcie_atu(void)
     logger_info("  Physical start: 0x%llx\n", phy_addr);
     logger_info("\n");
 
-    /* Step 1: Setup ATU for configuration access */
-    logger_info("Step 1: Configuring ATU for PCIe config access\n");
-    ret = dw_pcie_setup_atu(dbi_base_virt,
-                            PCIE_ATU_REGION_INDEX0,
-                            PCIE_ATU_TYPE_CFG0,
-                            cpu_addr,
-                            pci_addr,
-                            size);
-    if (ret != 0) {
-        logger_error("Failed to setup ATU!\n");
-        return;
-    }
-    logger_info("\n");
-
-    /* Step 2: Scan PCIe bus */
-    logger_info("Step 2: Scanning PCIe bus for devices\n");
-    ret = pcie_scan_bus(mmio_base_virt, &vendor_id, &device_id, &class_code);
+    /* Step 1: Scan PCIe bus (uses ATU Region 1 dynamically) */
+    logger_info("Step 1: Scanning PCIe bus for devices\n");
+    ret = pcie_scan_bus(dbi_base_virt, mmio_base_virt, &vendor_id, &device_id, &class_code);
     if (ret != 0) {
         logger_error("No PCIe device found!\n");
         return;
@@ -788,9 +931,20 @@ test_dw_pcie_atu(void)
     }
     logger_info("\n");
 
-    /* Step 3: Read BAR information */
-    logger_info("Step 3: Reading device BAR information\n");
-    pcie_get_bar_info(mmio_base_virt, 2, &bar_addr, &bar_size);
+    /* Step 2: Read BAR information */
+    logger_info("Step 2: Reading device BAR information\n");
+    pcie_get_bar_info(dbi_base_virt, mmio_base_virt, 2, &bar_addr, &bar_size);
+    logger_info("\n");
+
+    /* Step 3: Enable PCIe device (Memory Space, Bus Master) */
+    logger_info("Step 3: Enabling PCIe device\n");
+    logger_info("  This enables Memory Space access and Bus Master capability\n");
+    logger_info("  After this, ATU Region 1 is configured for Memory access to BAR\n");
+    ret = pcie_enable_device(dbi_base_virt, mmio_base_virt, bar_addr);
+    if (ret != 0) {
+        logger_error("Failed to enable PCIe device!\n");
+        return;
+    }
     logger_info("\n");
 
     /* Step 4: Map BAR to memory */
