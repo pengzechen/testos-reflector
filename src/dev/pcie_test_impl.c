@@ -1113,8 +1113,6 @@ test_dw_pcie_atu(void)
                 remote_ip[3]);
     logger_info("\n");
 
-    mdelay(1000 * 5); /* Wait a moment before sending ping */
-
     /* Send ping */
     send_ping(local_ip, remote_ip, 1);
     logger_info("\n");
