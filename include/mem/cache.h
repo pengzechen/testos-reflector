@@ -15,6 +15,8 @@
 #define MIN_CACHELINE_SIZE     16   // 最小缓存行大小(字节)
 #define MAX_CACHELINE_SIZE     256  // 最大缓存行大小(字节)
 
+/* 全局变量 */
+extern size_t g_cache_line_size;
 
 void
 init_cpu_cacheline_size(void);

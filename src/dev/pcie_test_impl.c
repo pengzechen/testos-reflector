@@ -12,6 +12,7 @@
 #include "mem/t_mmio.h"
 #include "mem/t_mem.h"
 #include "lib/t_string.h"
+#include "mem/cache.h"
 #include "t_types.h"
 
 /* PCIe DBI base address for RK3588 */
@@ -774,16 +775,44 @@ rtl8125_send_packet(uint8_t *data, uint32_t len)
     // 拷贝数据到当前TX缓冲区
     memcpy_local(tx_buffers[tx_idx], data, len);
 
+    // 填充短包到最小以太网帧长度 (64字节)
+    uint32_t pad_len = len;
+    if (pad_len < 60) {  // ETH_ZLEN = 60 (不含FCS)
+        memset_local(tx_buffers[tx_idx] + len, 0, 60 - len);
+        pad_len = 60;
+    }
+
+    // ===== 关键：刷新 TX 缓冲区的缓存，让硬件能看到数据 =====
+    // 对齐到缓存行边界
+    uint64_t buf_start = (uint64_t) tx_buffers[tx_idx] & ~(g_cache_line_size - 1);
+    uint64_t buf_end   = ((uint64_t) tx_buffers[tx_idx] + pad_len + g_cache_line_size - 1) &
+                       ~(g_cache_line_size - 1);
+    clean_dcache_va_range((void *) buf_start, buf_end - buf_start);
+
     // 设置描述符 OWN/FS/LS/长度
-    tx_ring[tx_idx].status = DESC_OWN | DESC_FS | DESC_LS | len;
-    // 触发硬件发送
-    rtl_write8(RTL8125_TxPoll, 0x40);
+    tx_ring[tx_idx].status = DESC_OWN | DESC_FS | DESC_LS | pad_len;
+
+    // ===== 关键：刷新描述符的缓存，让硬件能看到描述符 =====
+    uint64_t desc_start = (uint64_t) &tx_ring[tx_idx] & ~(g_cache_line_size - 1);
+    uint64_t desc_end = ((uint64_t) &tx_ring[tx_idx] + sizeof(rtl_desc_t) + g_cache_line_size - 1) &
+                        ~(g_cache_line_size - 1);
+    clean_dcache_va_range((void *) desc_start, desc_end - desc_start);
+
+    // 触发硬件发送 - RTL8125 使用 0x1 而不是 0x40 (0x40 是 RTL8169 的值)
+    rtl_write8(RTL8125_TxPoll, 0x01);
 
     // 等待发送完成（轮询OWN位）
     uint32_t timeout = 10000;
-    while ((tx_ring[tx_idx].status & DESC_OWN) && timeout--) {
+    while (timeout--) {
+        // ===== 关键：使描述符缓存失效，从内存读取硬件更新 =====
+        invalidate_dcache_va_range((void *) desc_start, desc_end - desc_start);
+
+        if (!(tx_ring[tx_idx].status & DESC_OWN))
+            break;
+
         udelay(10);
     }
+
     if (tx_ring[tx_idx].status & DESC_OWN) {
         logger_error("TX timeout!\n");
         return -1;
@@ -804,22 +833,47 @@ rtl8125_recv_packet(uint8_t *buffer, uint32_t *len, uint32_t timeout_ms)
         logger_error("RX ring/buffer not initialized!\n");
         return -1;
     }
+
+    // 计算描述符的缓存对齐范围
+    uint64_t desc_start = (uint64_t) &rx_ring[rx_idx] & ~(g_cache_line_size - 1);
+    uint64_t desc_end = ((uint64_t) &rx_ring[rx_idx] + sizeof(rtl_desc_t) + g_cache_line_size - 1) &
+                        ~(g_cache_line_size - 1);
+
     uint32_t timeout = timeout_ms * 100;
-    while ((rx_ring[rx_idx].status & DESC_OWN) && timeout--) {
+    while (timeout--) {
+        // ===== 关键：使描述符缓存失效，从内存读取硬件更新 =====
+        invalidate_dcache_va_range((void *) desc_start, desc_end - desc_start);
+
+        if (!(rx_ring[rx_idx].status & DESC_OWN))
+            break;
+
         udelay(10);
     }
+
     if (rx_ring[rx_idx].status & DESC_OWN) {
         // 超时未收到包
         return -1;
     }
+
     // 获取包长度
     uint32_t pkt_len = rx_ring[rx_idx].status & 0x3FFF;
     if (pkt_len > RX_BUF_SIZE) pkt_len = RX_BUF_SIZE;
+
+    // ===== 关键：使 RX 缓冲区缓存失效，从内存读取硬件写入的数据 =====
+    uint64_t buf_start = (uint64_t) rx_buffers[rx_idx] & ~(g_cache_line_size - 1);
+    uint64_t buf_end   = ((uint64_t) rx_buffers[rx_idx] + pkt_len + g_cache_line_size - 1) &
+                       ~(g_cache_line_size - 1);
+    invalidate_dcache_va_range((void *) buf_start, buf_end - buf_start);
+
     memcpy_local(buffer, rx_buffers[rx_idx], pkt_len);
     *len = pkt_len;
 
     // 清除OWN，重新赋值让硬件可用
     rx_ring[rx_idx].status = DESC_OWN | RX_BUF_SIZE;
+
+    // ===== 关键：刷新描述符缓存，让硬件能看到更新 =====
+    clean_dcache_va_range((void *) desc_start, desc_end - desc_start);
+
     rx_idx = (rx_idx + 1) % NUM_RX_DESC;
     return 0;
 }
