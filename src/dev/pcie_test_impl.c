@@ -1138,7 +1138,22 @@ test_dw_pcie_atu(void)
             logger_debug("  EtherType: 0x%04x\n", proto);
 
             if (proto == ETH_P_ARP) {
-                logger_info("  Received ARP packet (ignoring, waiting for ICMP reply)\n");
+                logger_info("  Received ARP packet:\n");
+                logger_info("    Source MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                            eth->src[0],
+                            eth->src[1],
+                            eth->src[2],
+                            eth->src[3],
+                            eth->src[4],
+                            eth->src[5]);
+                logger_info("    Dest MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                            eth->dest[0],
+                            eth->dest[1],
+                            eth->dest[2],
+                            eth->dest[3],
+                            eth->dest[4],
+                            eth->dest[5]);
+                logger_info("    (ignoring, waiting for ICMP reply)\n");
                 continue;  // 继续等待 ICMP 回复
             }
 
@@ -1152,15 +1167,47 @@ test_dw_pcie_atu(void)
                     logger_debug("  ICMP Type: %d\n", icmp->type);
 
                     if (icmp->type == ICMP_ECHOREPLY) {
-                        logger_info("  ICMP Echo Reply received!\n");
-                        logger_info("  From: %d.%d.%d.%d\n",
+                        logger_info("\n");
+                        logger_info("=== ICMP Echo Reply Received! ===\n");
+                        logger_info("  Ethernet Header:\n");
+                        logger_info("    Source MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                                    eth->src[0],
+                                    eth->src[1],
+                                    eth->src[2],
+                                    eth->src[3],
+                                    eth->src[4],
+                                    eth->src[5]);
+                        logger_info("    Dest MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                                    eth->dest[0],
+                                    eth->dest[1],
+                                    eth->dest[2],
+                                    eth->dest[3],
+                                    eth->dest[4],
+                                    eth->dest[5]);
+                        logger_info("    EtherType: 0x%04x (IP)\n", proto);
+
+                        logger_info("  IP Header:\n");
+                        logger_info("    Source IP: %d.%d.%d.%d\n",
                                     (ip->src_addr >> 0) & 0xFF,
                                     (ip->src_addr >> 8) & 0xFF,
                                     (ip->src_addr >> 16) & 0xFF,
                                     (ip->src_addr >> 24) & 0xFF);
-                        logger_info("  Sequence: %d\n", ntohs(icmp->sequence));
+                        logger_info("    Dest IP: %d.%d.%d.%d\n",
+                                    (ip->dest_addr >> 0) & 0xFF,
+                                    (ip->dest_addr >> 8) & 0xFF,
+                                    (ip->dest_addr >> 16) & 0xFF,
+                                    (ip->dest_addr >> 24) & 0xFF);
+                        logger_info("    TTL: %d\n", ip->ttl);
+                        logger_info("    Protocol: %d (ICMP)\n", ip->protocol);
+
+                        logger_info("  ICMP Header:\n");
+                        logger_info("    Type: %d (Echo Reply)\n", icmp->type);
+                        logger_info("    Code: %d\n", icmp->code);
+                        logger_info("    ID: 0x%04x\n", ntohs(icmp->id));
+                        logger_info("    Sequence: %d\n", ntohs(icmp->sequence));
+                        logger_info("    Checksum: 0x%04x\n", ntohs(icmp->checksum));
                         logger_info("\n");
-                        logger_info("✓ Ping test SUCCESSFUL!\n");
+                        logger_info("Ping test SUCCESSFUL!\n");
                         goto ping_success;
                     }
                 }
@@ -1172,33 +1219,72 @@ test_dw_pcie_atu(void)
     logger_info("Note: Packets were sent successfully (verified by tcpdump)\n");
 
 ping_success:
-    ret = rtl8125_recv_packet(rx_buffer, &rx_len, 1000);
+    // 检查是否还有其他包到达（如 ARP）
+    logger_info("\nChecking for additional packets...\n");
+    ret = rtl8125_recv_packet(rx_buffer, &rx_len, 500);
     if (ret == 0) {
-        logger_info("Received reply packet (%d bytes)\n", rx_len);
+        logger_info("Received additional packet (%d bytes)\n", rx_len);
 
-        /* Parse the reply */
-        eth_hdr_t *eth = (eth_hdr_t *) rx_buffer;
-        if (ntohs(eth->proto) == ETH_P_IP) {
+        /* Parse the packet */
+        eth_hdr_t *eth   = (eth_hdr_t *) rx_buffer;
+        uint16_t   proto = ntohs(eth->proto);
+
+        logger_info("  Ethernet Header:\n");
+        logger_info("    Source MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                    eth->src[0],
+                    eth->src[1],
+                    eth->src[2],
+                    eth->src[3],
+                    eth->src[4],
+                    eth->src[5]);
+        logger_info("    Dest MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                    eth->dest[0],
+                    eth->dest[1],
+                    eth->dest[2],
+                    eth->dest[3],
+                    eth->dest[4],
+                    eth->dest[5]);
+        logger_info("    EtherType: 0x%04x ", proto);
+
+        if (proto == ETH_P_ARP) {
+            logger_info("(ARP)\n");
+        } else if (proto == ETH_P_IP) {
+            logger_info("(IP)\n");
             ip_hdr_t *ip = (ip_hdr_t *) (rx_buffer + sizeof(eth_hdr_t));
+            logger_info("  IP Header:\n");
+            logger_info("    Source IP: %d.%d.%d.%d\n",
+                        (ip->src_addr >> 0) & 0xFF,
+                        (ip->src_addr >> 8) & 0xFF,
+                        (ip->src_addr >> 16) & 0xFF,
+                        (ip->src_addr >> 24) & 0xFF);
+            logger_info("    Dest IP: %d.%d.%d.%d\n",
+                        (ip->dest_addr >> 0) & 0xFF,
+                        (ip->dest_addr >> 8) & 0xFF,
+                        (ip->dest_addr >> 16) & 0xFF,
+                        (ip->dest_addr >> 24) & 0xFF);
+            logger_info("    Protocol: %d ", ip->protocol);
+
             if (ip->protocol == IPPROTO_ICMP) {
+                logger_info("(ICMP)\n");
                 icmp_hdr_t *icmp =
                     (icmp_hdr_t *) (rx_buffer + sizeof(eth_hdr_t) + sizeof(ip_hdr_t));
-                if (icmp->type == ICMP_ECHOREPLY) {
-                    logger_info("  ICMP Echo Reply received!\n");
-                    logger_info("  From: %d.%d.%d.%d\n",
-                                (ip->src_addr >> 0) & 0xFF,
-                                (ip->src_addr >> 8) & 0xFF,
-                                (ip->src_addr >> 16) & 0xFF,
-                                (ip->src_addr >> 24) & 0xFF);
-                    logger_info("  Sequence: %d\n", ntohs(icmp->sequence));
-                    logger_info("\n");
-                    logger_info("✓ Ping test SUCCESSFUL!\n");
+                logger_info("    ICMP Type: %d ", icmp->type);
+                if (icmp->type == ICMP_ECHO) {
+                    logger_info("(Echo Request)\n");
+                } else if (icmp->type == ICMP_ECHOREPLY) {
+                    logger_info("(Echo Reply)\n");
+                } else {
+                    logger_info("(Other)\n");
                 }
+                logger_info("    ICMP Sequence: %d\n", ntohs(icmp->sequence));
+            } else {
+                logger_info("(Other)\n");
             }
+        } else {
+            logger_info("(Unknown)\n");
         }
     } else {
-        logger_warn("No reply received (timeout)\n");
-        logger_info("Note: This is expected in demo mode without DMA setup\n");
+        logger_info("  No additional packets (timeout)\n");
     }
 
     logger_info("\n");
