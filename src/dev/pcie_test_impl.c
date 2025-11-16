@@ -156,7 +156,7 @@ static uint8_t          *rx_buffers[NUM_RX_DESC];
 static uint32_t          tx_idx               = 0;
 static uint32_t          rx_idx               = 0;
 static uint8_t           my_mac[ETH_ALEN]     = {0x2e, 0xc3, 0x69, 0x34, 0x7d, 0x31};
-static uint8_t           remote_mac[ETH_ALEN] = {0x38, 0xf7, 0xcd, 0xc8, 0xd9, 0x32};
+static uint8_t           remote_mac[ETH_ALEN] = {0x00, 0xe0, 0x1e, 0x1c, 0x01, 0x5e}; // 00:e0:1e:1c:01:5e
 
 
 /* Helper functions for MMIO */
@@ -1101,8 +1101,8 @@ test_dw_pcie_atu(void)
 
     /* Step 6: Test ping */
     logger_info("Step 6: Testing ICMP ping functionality\n");
-    uint8_t local_ip[4]  = {192, 168, 22, 102};
-    uint8_t remote_ip[4] = {192, 168, 22, 101};
+    uint8_t local_ip[4]  = {192, 168, 1, 60};
+    uint8_t remote_ip[4] = {192, 168, 1, 8};
 
     logger_info("Network configuration:\n");
     logger_info("  Local IP: %d.%d.%d.%d\n", local_ip[0], local_ip[1], local_ip[2], local_ip[3]);

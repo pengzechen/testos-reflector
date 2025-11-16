@@ -82,9 +82,14 @@ uimg: $(BIN_TARGET)
 	mkimage -A arm64 -O linux -T kernel -C none -a 0x400000 -e 0x400000 -n "testos Kernel" -d build/testos.bin testos-reflector_aarch64-opi5p.uimg 
 
 uboot: uimg
-	cp testos-reflector_aarch64-opi5p.uimg /data/docker/tftpboot/data/kernel.uimg
-	cp tools/orangepi5/rk3588-orangepi-5-plus.dtb /data/docker/tftpboot/data/rk3588-orangepi-5-plus.dtb
+	sudo cp testos-reflector_aarch64-opi5p.uimg /data/docker/tftpboot/data/kernel.uimg
+	sudo cp tools/orangepi5/rk3588-orangepi-5-plus.dtb /data/docker/tftpboot/data/rk3588-orangepi-5-plus.dtb
 	echo "uboot done"
+
+reboot:
+	@echo "重启开发板..."
+	curl http://192.168.1.24:8080/off && sleep 0.3 && curl http://192.168.1.24:8080/on
+
 
 # 清理
 clean:
