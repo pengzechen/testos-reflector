@@ -1244,16 +1244,33 @@ test_rtl8125(void)
 
             if (recv_len > 0) {
                 printf("Received packet, length: %d bytes\n", recv_len);
-                for (int i = 0; i < recv_len; i++) {
-                    logger_debug("%02x ", recv_packet[i]);
-                    if ((i + 1) % 16 == 0)
-                        logger_debug("\n");
+
+                /* 解析接收到的包 */
+                int packet_type = parse_packet(recv_packet, recv_len, my_mac, local_ip);
+
+                if (packet_type == 1) {
+                    /* ARP请求,生成响应 */
+                    unsigned char arp_reply[128] = {0};
+                    int           reply_len =
+                        process_arp_request(recv_packet, recv_len, my_mac, local_ip, arp_reply);
+                    if (reply_len > 0) {
+                        printf("Sending ARP reply...\n");
+                        rtl8169_eth_send(&dev, arp_reply, reply_len);
+                    }
+                } else if (packet_type == 2) {
+                    /* Ping请求,生成响应 */
+                    unsigned char ping_reply[256] = {0};
+                    int           reply_len =
+                        process_ping_request(recv_packet, recv_len, my_mac, local_ip, ping_reply);
+                    if (reply_len > 0) {
+                        printf("Sending Ping reply...\n");
+                        rtl8169_eth_send(&dev, ping_reply, reply_len);
+                    }
                 }
-                logger_debug("\n");
+
                 printf("\n\n");
             }
             timer_delay_ms(1);
         }
-        timer_delay_ms(1000);
     }
 }

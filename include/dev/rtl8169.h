@@ -43,6 +43,23 @@ typedef struct
 
 typedef struct
 {
+    uint16_t hw_type;
+    uint16_t proto_type;
+    uint8_t  hw_addr_len;
+    uint8_t  proto_addr_len;
+    uint16_t opcode;
+    uint8_t  sender_mac[ETH_ALEN];
+    uint8_t  sender_ip[4];
+    uint8_t  target_mac[ETH_ALEN];
+    uint8_t  target_ip[4];
+} __attribute__((packed)) arp_hdr_t;
+
+#define ARP_REQUEST          1
+#define ARP_REPLY            2
+#define ARP_HW_TYPE_ETHERNET 1
+
+typedef struct
+{
     uint32_t status;
     uint32_t vlan_tag;
     uint32_t buf_addr_lo;
@@ -62,6 +79,20 @@ struct udevice
 };
 
 uint32_t generate_ping(uint8_t src_ip[4], uint8_t dst_ip[4], uint16_t seq, uint8_t packet[128]);
+int
+parse_packet(unsigned char *packet, int length, uint8_t my_mac[ETH_ALEN], uint8_t my_ip[4]);
+int
+process_arp_request(unsigned char *packet,
+                    int            length,
+                    uint8_t        my_mac[ETH_ALEN],
+                    uint8_t        my_ip[4],
+                    unsigned char *reply_packet);
+int
+     process_ping_request(unsigned char *packet,
+                          int            length,
+                          uint8_t        my_mac[ETH_ALEN],
+                          uint8_t        my_ip[4],
+                          unsigned char *reply_packet);
 int rtl8169_eth_probe(struct udevice *dev);
 void rtl8169_eth_stop(struct udevice *dev);
 int rtl8169_eth_start(struct udevice *dev);
