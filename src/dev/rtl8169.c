@@ -1227,17 +1227,25 @@ test_rtl8125(void)
     uint32_t pak_len      = 0;
     uint32_t seq          = 1;
 
+    /* 丢包率统计变量 */
+    uint32_t total_sent    = 0;
+    uint32_t total_reply   = 0;
+    uint32_t ping_received = 0;
+
     printf("Testing RTL8125 Ethernet Driver\n");
     rtl8169_eth_probe(&dev);
     rtl8169_eth_start(&dev);
 
-
-    while (1) {
-        printf("Sending ping packet, seq=%d\n", seq);
+    /* 循环20次发送ping包 */
+    for (int round = 0; round < 1000; round++) {
+        printf("Sending ping packet, seq=%d (round %d/1000)\n", seq, round + 1);
         pak_len = generate_ping(local_ip, remote_ip, seq, packet);
         seq++;
         rtl8169_eth_send(&dev, packet, pak_len);
+        total_sent++;
 
+        /* 等待响应,最多等待1秒 */
+        ping_received = 0;
         for (int wait = 0; wait < HZ; wait++) {
             unsigned char *recv_packet = NULL;
             int            recv_len    = rtl8169_eth_recv(&dev, 0, &recv_packet);
@@ -1266,11 +1274,33 @@ test_rtl8125(void)
                         printf("Sending Ping reply...\n");
                         rtl8169_eth_send(&dev, ping_reply, reply_len);
                     }
+                } else if (packet_type == 3) {
+                    /* 收到Ping回复包 */
+                    if (!ping_received) {
+                        ping_received = 1;
+                        total_reply++;
+                        printf("*** Ping reply received! ***\n");
+                    }
                 }
 
-                printf("\n\n");
+                printf("\n");
             }
             timer_delay_ms(1);
+
+            /* 如果已经收到ping回复,提前退出等待 */
+            if (ping_received)
+                break;
+        }
+
+        if (!ping_received) {
+            printf("*** Ping timeout! ***\n\n");
         }
     }
+
+    /* 计算并显示统计结果 */
+    printf("\n========================================\n");
+    printf("Ping Statistics:\n");
+    printf("  Total sent:     %d packets\n", total_sent);
+    printf("  Total received: %d packets\n", total_reply);
+    printf("========================================\n");
 }

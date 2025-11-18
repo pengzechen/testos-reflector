@@ -166,6 +166,7 @@ generate_ping(uint8_t src_ip[4], uint8_t dst_ip[4], uint16_t seq, uint8_t packet
  *   0: 不是给我们的包或无需处理
  *   1: ARP请求
  *   2: ICMP Echo请求(Ping)
+ *   3: ICMP Echo回复(Ping Reply)
  *   -1: 解析失败
  */
 int
@@ -315,7 +316,7 @@ parse_packet(unsigned char *packet, int length, uint8_t my_mac[ETH_ALEN], uint8_
             } else if (icmp->type == ICMP_ECHOREPLY) {
                 logger_info("  => ICMP Echo Reply (Ping response)\n");
                 logger_info("  Sequence: %d\n", ntohs(icmp->sequence));
-                return 0;
+                return 3; /* 返回3表示收到ping回复 */
             }
         }
     }
