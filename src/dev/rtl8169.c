@@ -1225,24 +1225,35 @@ test_rtl8125(void)
     uint8_t  remote_ip[4] = {192, 168, 22, 101};
     uint8_t  packet[128]  = {0};
     uint32_t pak_len      = 0;
+    uint32_t seq          = 1;
 
     printf("Testing RTL8125 Ethernet Driver\n");
     rtl8169_eth_probe(&dev);
     rtl8169_eth_start(&dev);
 
-    pak_len = generate_ping(local_ip, remote_ip, 1, packet);
-
-    rtl8169_eth_send(&dev, packet, pak_len);
 
     while (1) {
-        unsigned char *recv_packet = NULL;
-        int            recv_len    = rtl8169_eth_recv(&dev, 0, &recv_packet);
+        printf("Sending ping packet, seq=%d\n", seq);
+        pak_len = generate_ping(local_ip, remote_ip, seq, packet);
+        seq++;
+        rtl8169_eth_send(&dev, packet, pak_len);
 
-        if (recv_len > 0) {
-            printf("Received packet, length: %d bytes\n", recv_len);
-            printf("\n\n");
+        for (int wait = 0; wait < HZ; wait++) {
+            unsigned char *recv_packet = NULL;
+            int            recv_len    = rtl8169_eth_recv(&dev, 0, &recv_packet);
+
+            if (recv_len > 0) {
+                printf("Received packet, length: %d bytes\n", recv_len);
+                for (int i = 0; i < recv_len; i++) {
+                    logger_debug("%02x ", recv_packet[i]);
+                    if ((i + 1) % 16 == 0)
+                        logger_debug("\n");
+                }
+                logger_debug("\n");
+                printf("\n\n");
+            }
+            timer_delay_ms(1);
         }
-
-        udelay(1000);  // Small delay to avoid busy waiting
+        timer_delay_ms(1000);
     }
 }
