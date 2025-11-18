@@ -6,8 +6,8 @@
 #include "t_types.h"
 #include "dev/rtl8169.h"
 
-static uint8_t           my_mac[ETH_ALEN]     = {0x2e, 0xc3, 0x69, 0x34, 0x7d, 0x31};
-static uint8_t           remote_mac[ETH_ALEN] = {0x00, 0xe0, 0x1e, 0x1c, 0x01, 0x5e}; // 00:e0:1e:1c:01:5e
+static uint8_t my_mac[ETH_ALEN]     = {0x2e, 0xc3, 0x69, 0x34, 0x7d, 0x30};
+static uint8_t remote_mac[ETH_ALEN] = {0x38, 0xf7, 0xcd, 0xc8, 0xd9, 0x32};  // 38:f7:cd:c8:d9:32
 
 /* Checksum calculation */
 static uint16_t

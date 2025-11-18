@@ -7,6 +7,9 @@
 #include "lib/t_string.h"
 #include "dev/rtl8169.h"
 
+#define printf logger_info
+#define debug  logger_info
+
 #define EIO       1
 #define ETIMEDOUT 110
 #define ENOMEM    12
@@ -26,8 +29,7 @@
 #define ICMP_ECHO      8
 #define ICMP_ECHOREPLY 0
 
-static uint8_t my_mac[ETH_ALEN]     = {0x2e, 0xc3, 0x69, 0x34, 0x7d, 0x31};
-static uint8_t remote_mac[ETH_ALEN] = {0x00, 0xe0, 0x1e, 0x1c, 0x01, 0x5e};  // 00:e0:1e:1c:01:5e
+static uint8_t my_mac[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};  // ff:ff:ff:ff:ff:ff
 
 struct pci_child_plat MY_RTL8125 = {
     .vendor = 0x10EC,  // Realtek 的 PCIe Vendor ID
@@ -45,10 +47,13 @@ struct eth_pdata
     unsigned char *enetaddr;
 };
 
-struct eth_pdata MYETH = {0};
+struct eth_pdata MYETH = {
+    .enetaddr = my_mac,
+};
 void *
 dev_get_plat(struct udevice *dev)
 {
+    debug("Dev get\n");
     return &MYETH;
 }
 
@@ -65,8 +70,6 @@ static unsigned long ioaddr;
 /* Alignment macro - rounds up to the nearest multiple of 'align' */
 #define ALIGN(x, align) (((x) + (align) - 1) & ~((align) - 1))
 
-#define printf logger_info
-#define debug  logger_info
 
 /* Condensed operations for readability. */
 #define currticks() timer_get_system_ticks()
@@ -86,7 +89,7 @@ dm_pci_mem_to_phys(struct udevice *dev, unsigned long addr)
 
 /* PCI BAR mapping function */
 /* In bare-metal environment, return the fixed MMIO base address for the device */
-static inline void *
+static inline unsigned long
 dm_pci_map_bar(struct udevice *dev,
                unsigned int    bar_offset,
                unsigned long   flags,
@@ -100,10 +103,13 @@ dm_pci_map_bar(struct udevice *dev,
     (void) region_type;
     (void) mem_type;
 
+    debug("Mapping PCI BAR for device %s\n", dev->name);
     /* Return the fixed MMIO address for RTL8125/RTL8169 */
     /* This address should match the PCIe device's BAR address */
     struct eth_pdata *plat = dev_get_plat(dev);
-    return (void *) dev->mmio_base;
+
+    debug("MMIO base address: 0x%lx\n", dev->mmio_base);
+    return dev->mmio_base;
 }
 
 /* media options */
@@ -462,12 +468,12 @@ struct rtl8169_private
     unsigned char *Tx_skbuff[NUM_TX_DESC];
 } tpx;
 
-static struct rtl8169_private *tpc;
+static struct rtl8169_private RTL8169_Pri = {0};
 
 void *
 dev_get_priv(struct udevice *dev)
 {
-    return tpc;
+    return &RTL8169_Pri;
 }
 
 
@@ -524,13 +530,15 @@ mdio_read(int RegAddr)
 static int
 rtl8169_init_board(unsigned long dev_iobase, const char *name)
 {
-    int      i;
-    uint32_t tmp;
+    int                     i;
+    uint32_t                tmp;
+    struct rtl8169_private *tpc = dev_get_priv(NULL);
 
-#ifdef DEBUG_RTL8169
     printf("%s\n", __FUNCTION__);
-#endif
+
     ioaddr = dev_iobase;
+
+    printf("IOADDR = 0x%lx\n", ioaddr);
 
     /* Soft reset the chip. */
     RTL_W8(ChipCmd, CmdReset);
@@ -663,9 +671,10 @@ rtl_recv_common(struct udevice *dev, unsigned long dev_iobase, unsigned char **p
     /* return true if there's an ethernet packet ready to read */
     /* nic->packet should contain data on return */
     /* nic->packetlen should contain length of data */
-    struct pci_child_plat *pplat = dev_get_parent_plat(dev);
-    int                    cur_rx;
-    int                    length = 0;
+    struct pci_child_plat  *pplat = dev_get_parent_plat(dev);
+    int                     cur_rx;
+    int                     length = 0;
+    struct rtl8169_private *tpc    = dev_get_priv(dev);
 
     ioaddr = dev_iobase;
 
@@ -726,12 +735,13 @@ rtl_send_common(struct udevice *dev, unsigned long dev_iobase, void *packet, int
 {
     /* send the packet to destination */
 
-    struct pci_child_plat *pplat = dev_get_parent_plat(dev);
-    uint32_t               to;
-    uint8_t               *ptxb;
-    int                    entry = tpc->cur_tx % NUM_TX_DESC;
-    uint32_t               len   = length;
-    int                    ret;
+    struct pci_child_plat  *pplat = dev_get_parent_plat(dev);
+    struct rtl8169_private *tpc   = dev_get_priv(dev);
+    uint32_t                to;
+    uint8_t                *ptxb;
+    int                     entry = tpc->cur_tx % NUM_TX_DESC;
+    uint32_t                len   = length;
+    int                     ret;
 
     printf("%s\n", __FUNCTION__);
     printf("sending %d bytes\n", len);
@@ -793,13 +803,12 @@ rtl8169_eth_send(struct udevice *dev, void *packet, int length)
 static void
 rtl8169_set_rx_mode(void)
 {
-    uint32_t mc_filter[2]; /* Multicast hash filter */
-    int      rx_mode;
-    uint32_t tmp = 0;
+    uint32_t                mc_filter[2]; /* Multicast hash filter */
+    int                     rx_mode;
+    uint32_t                tmp = 0;
+    struct rtl8169_private *tpc = dev_get_priv(NULL);
 
-#ifdef DEBUG_RTL8169
     printf("%s\n", __FUNCTION__);
-#endif
 
     /* IFF_ALLMULTI */
     /* Too many to filter perfectly -- accept all multicasts. */
@@ -819,10 +828,10 @@ rtl8169_hw_start(struct udevice *dev)
 {
     uint32_t i;
 
-#ifdef DEBUG_RTL8169
+    struct rtl8169_private *tpc = dev_get_priv(dev);
+
     int stime = currticks();
     printf("%s\n", __FUNCTION__);
-#endif
 
 #if 0
 	/* Soft reset the chip. */
@@ -876,9 +885,7 @@ rtl8169_hw_start(struct udevice *dev)
     /* no early-rx interrupts */
     RTL_W16(MultiIntr, RTL_R16(MultiIntr) & 0xF000);
 
-#ifdef DEBUG_RTL8169
     printf("%s elapsed time : %lu\n", __func__, currticks() - stime);
-#endif
 }
 
 static void
@@ -886,10 +893,9 @@ rtl8169_init_ring(struct udevice *dev)
 {
     int i;
 
-#ifdef DEBUG_RTL8169
     int stime = currticks();
     printf("%s\n", __FUNCTION__);
-#endif
+    struct rtl8169_private *tpc = dev_get_priv(dev);
 
     tpc->cur_rx   = 0;
     tpc->cur_tx   = 0;
@@ -913,9 +919,7 @@ rtl8169_init_ring(struct udevice *dev)
         rtl_flush_rx_desc(&tpc->RxDescArray[i]);
     }
 
-#ifdef DEBUG_RTL8169
     printf("%s elapsed time : %lu\n", __func__, currticks() - stime);
-#endif
 }
 
 static void
@@ -923,10 +927,8 @@ rtl8169_common_start(struct udevice *dev, unsigned char *enetaddr, unsigned long
 {
     int i;
 
-#ifdef DEBUG_RTL8169
     int stime = currticks();
     printf("%s\n", __FUNCTION__);
-#endif
 
     ioaddr = dev_iobase;
 
@@ -944,9 +946,7 @@ rtl8169_common_start(struct udevice *dev, unsigned char *enetaddr, unsigned long
     txb[4] = enetaddr[4];
     txb[5] = enetaddr[5];
 
-#ifdef DEBUG_RTL8169
     printf("%s elapsed time : %lu\n", __func__, currticks() - stime);
-#endif
 }
 
 int
@@ -967,9 +967,7 @@ rtl_halt_common(struct udevice *dev)
     struct pci_child_plat  *pplat = dev_get_parent_plat(dev);
     int                     i;
 
-#ifdef DEBUG_RTL8169
     printf("%s\n", __FUNCTION__);
-#endif
 
     ioaddr = priv->iobase;
 
@@ -985,7 +983,7 @@ rtl_halt_common(struct udevice *dev)
     RTL_W32(RxMissed, 0);
 
     for (i = 0; i < NUM_RX_DESC; i++) {
-        tpc->RxBufferRing[i] = NULL;
+        priv->RxBufferRing[i] = NULL;
     }
 }
 
@@ -1029,11 +1027,13 @@ rtl_init(unsigned long dev_ioaddr, const char *name, unsigned char *enetaddr)
     board_idx++;
 
     /* point to private storage */
-    tpc = &tpx;
+    struct rtl8169_private *tpc = &RTL8169_Pri;
 
     rc = rtl8169_init_board(ioaddr, name);
     if (rc)
         return rc;
+
+    debug("%s: RTL8169 at 0x%lx, IRQ %d\n", name, ioaddr, 0);
 
     /* Get MAC address.  FIXME: read EEPROM */
     for (i = 0; i < MAC_ADDR_LEN; i++)
@@ -1142,7 +1142,8 @@ rtl_init(unsigned long dev_ioaddr, const char *name, unsigned char *enetaddr)
     return 0;
 }
 
-int rtl8169_eth_probe(struct udevice *dev)
+int
+rtl8169_eth_probe(struct udevice *dev)
 {
     struct pci_child_plat  *pplat = dev_get_parent_plat(dev);
     struct rtl8169_private *priv  = dev_get_priv(dev);
@@ -1160,7 +1161,7 @@ int rtl8169_eth_probe(struct udevice *dev)
             region = 1;
             break;
     }
-
+    debug("rtl8169: PCI device 0x%04x\n", pplat->device);
     priv->iobase = (unsigned long)
         dm_pci_map_bar(dev, PCI_BASE_ADDRESS_0 + region * 4, 0, 0, PCI_REGION_TYPE, PCI_REGION_MEM);
 
@@ -1217,18 +1218,31 @@ test_rtl8125(void)
 {
     uint64_t       rtl_mmio_phys = 0x9c0100000UL;
     struct udevice dev           = {
-                  .name      = "eth_rtl8169",
+                  .name      = "eth_rtl8125",
                   .mmio_base = rtl_mmio_phys,
     };
-    uint8_t local_ip[4]  = {192, 168, 1, 60};
-    uint8_t remote_ip[4] = {192, 168, 1, 8};
-	uint8_t packet[128] = {0};
-	uint32_t pak_len = 0;
+    uint8_t  local_ip[4]  = {192, 168, 22, 102};
+    uint8_t  remote_ip[4] = {192, 168, 22, 101};
+    uint8_t  packet[128]  = {0};
+    uint32_t pak_len      = 0;
 
+    printf("Testing RTL8125 Ethernet Driver\n");
     rtl8169_eth_probe(&dev);
     rtl8169_eth_start(&dev);
 
-	pak_len = generate_ping(local_ip, remote_ip, 1, packet);
+    pak_len = generate_ping(local_ip, remote_ip, 1, packet);
 
     rtl8169_eth_send(&dev, packet, pak_len);
+
+    while (1) {
+        unsigned char *recv_packet = NULL;
+        int            recv_len    = rtl8169_eth_recv(&dev, 0, &recv_packet);
+
+        if (recv_len > 0) {
+            printf("Received packet, length: %d bytes\n", recv_len);
+            printf("\n\n");
+        }
+
+        udelay(1000);  // Small delay to avoid busy waiting
+    }
 }
