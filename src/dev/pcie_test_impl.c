@@ -14,6 +14,7 @@
 #include "lib/t_string.h"
 #include "mem/cache.h"
 #include "t_types.h"
+#include "dev/rtl8169.h"
 
 /* PCIe DBI base address for RK3588 */
 #define DBI_BASE 0xa40c00000UL
@@ -107,45 +108,6 @@
 #define IPPROTO_ICMP   1
 #define ICMP_ECHO      8
 #define ICMP_ECHOREPLY 0
-
-/* Network structures */
-typedef struct
-{
-    uint8_t  dest[ETH_ALEN];
-    uint8_t  src[ETH_ALEN];
-    uint16_t proto;
-} __attribute__((packed)) eth_hdr_t;
-
-typedef struct
-{
-    uint8_t  version_ihl;
-    uint8_t  tos;
-    uint16_t total_len;
-    uint16_t id;
-    uint16_t frag_off;
-    uint8_t  ttl;
-    uint8_t  protocol;
-    uint16_t checksum;
-    uint32_t src_addr;
-    uint32_t dest_addr;
-} __attribute__((packed)) ip_hdr_t;
-
-typedef struct
-{
-    uint8_t  type;
-    uint8_t  code;
-    uint16_t checksum;
-    uint16_t id;
-    uint16_t sequence;
-} __attribute__((packed)) icmp_hdr_t;
-
-typedef struct
-{
-    uint32_t status;
-    uint32_t vlan_tag;
-    uint32_t buf_addr_lo;
-    uint32_t buf_addr_hi;
-} __attribute__((packed)) rtl_desc_t;
 
 /* Global variables for network driver */
 static volatile uint8_t *rtl_mmio_base = NULL;
@@ -1113,108 +1075,84 @@ test_dw_pcie_atu(void)
                 remote_ip[3]);
     logger_info("\n");
 
-    /* Send ping */
-    send_ping(local_ip, remote_ip, 1);
-    logger_info("\n");
-
-    /* Wait for reply */
-    logger_info("Waiting for ping reply...\n");
     uint8_t  rx_buffer[1024];
     uint32_t rx_len;
+    int      ping_count         = 60;
+    int      successful_replies = 0;
 
-    // 尝试多次接收,因为可能会先收到 ARP 包
-    int max_tries = 5;
-    for (int try = 0; try < max_tries; try++) {
-        logger_debug("  Receive attempt %d/%d...\n", try + 1, max_tries);
-        ret = rtl8125_recv_packet(rx_buffer, &rx_len, 2000);  // 增加超时到 2 秒
-        if (ret == 0) {
-            logger_info("Received packet (%d bytes)\n", rx_len);
+    /* Send 6 pings, one per second */
+    for (int ping_seq = 1; ping_seq <= ping_count; ping_seq++) {
+        logger_info("=== Ping %d/%d ===\n", ping_seq, ping_count);
 
-            /* Parse the reply */
-            eth_hdr_t *eth   = (eth_hdr_t *) rx_buffer;
-            uint16_t   proto = ntohs(eth->proto);
-            logger_debug("  EtherType: 0x%04x\n", proto);
+        /* Send ping */
+        send_ping(local_ip, remote_ip, ping_seq);
 
-            if (proto == ETH_P_ARP) {
-                logger_info("  Received ARP packet:\n");
-                logger_info("    Source MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                            eth->src[0],
-                            eth->src[1],
-                            eth->src[2],
-                            eth->src[3],
-                            eth->src[4],
-                            eth->src[5]);
-                logger_info("    Dest MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                            eth->dest[0],
-                            eth->dest[1],
-                            eth->dest[2],
-                            eth->dest[3],
-                            eth->dest[4],
-                            eth->dest[5]);
-                logger_info("    (ignoring, waiting for ICMP reply)\n");
-                continue;  // 继续等待 ICMP 回复
-            }
+        /* Wait for reply */
+        logger_info("Waiting for ping reply...\n");
 
-            if (proto == ETH_P_IP) {
-                ip_hdr_t *ip = (ip_hdr_t *) (rx_buffer + sizeof(eth_hdr_t));
-                logger_debug("  IP Protocol: %d\n", ip->protocol);
+        // 尝试多次接收,因为可能会先收到 ARP 包
+        int      max_tries     = 5;
+        int      reply_received = 0;
+        for (int try = 0; try < max_tries; try++) {
+            logger_debug("  Receive attempt %d/%d...\n", try + 1, max_tries);
+            ret = rtl8125_recv_packet(rx_buffer, &rx_len, 200);  // 200ms 超时
+            if (ret == 0) {
+                logger_info("Received packet (%d bytes)\n", rx_len);
 
-                if (ip->protocol == IPPROTO_ICMP) {
-                    icmp_hdr_t *icmp =
-                        (icmp_hdr_t *) (rx_buffer + sizeof(eth_hdr_t) + sizeof(ip_hdr_t));
-                    logger_debug("  ICMP Type: %d\n", icmp->type);
+                /* Parse the reply */
+                eth_hdr_t *eth   = (eth_hdr_t *) rx_buffer;
+                uint16_t   proto = ntohs(eth->proto);
+                logger_debug("  EtherType: 0x%04x\n", proto);
 
-                    if (icmp->type == ICMP_ECHOREPLY) {
-                        logger_info("\n");
-                        logger_info("=== ICMP Echo Reply Received! ===\n");
-                        logger_info("  Ethernet Header:\n");
-                        logger_info("    Source MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                                    eth->src[0],
-                                    eth->src[1],
-                                    eth->src[2],
-                                    eth->src[3],
-                                    eth->src[4],
-                                    eth->src[5]);
-                        logger_info("    Dest MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                                    eth->dest[0],
-                                    eth->dest[1],
-                                    eth->dest[2],
-                                    eth->dest[3],
-                                    eth->dest[4],
-                                    eth->dest[5]);
-                        logger_info("    EtherType: 0x%04x (IP)\n", proto);
+                if (proto == ETH_P_ARP) {
+                    logger_info("  Received ARP packet (ignoring)\n");
+                    continue;  // 继续等待 ICMP 回复
+                }
 
-                        logger_info("  IP Header:\n");
-                        logger_info("    Source IP: %d.%d.%d.%d\n",
-                                    (ip->src_addr >> 0) & 0xFF,
-                                    (ip->src_addr >> 8) & 0xFF,
-                                    (ip->src_addr >> 16) & 0xFF,
-                                    (ip->src_addr >> 24) & 0xFF);
-                        logger_info("    Dest IP: %d.%d.%d.%d\n",
-                                    (ip->dest_addr >> 0) & 0xFF,
-                                    (ip->dest_addr >> 8) & 0xFF,
-                                    (ip->dest_addr >> 16) & 0xFF,
-                                    (ip->dest_addr >> 24) & 0xFF);
-                        logger_info("    TTL: %d\n", ip->ttl);
-                        logger_info("    Protocol: %d (ICMP)\n", ip->protocol);
+                if (proto == ETH_P_IP) {
+                    ip_hdr_t *ip = (ip_hdr_t *) (rx_buffer + sizeof(eth_hdr_t));
+                    logger_debug("  IP Protocol: %d\n", ip->protocol);
 
-                        logger_info("  ICMP Header:\n");
-                        logger_info("    Type: %d (Echo Reply)\n", icmp->type);
-                        logger_info("    Code: %d\n", icmp->code);
-                        logger_info("    ID: 0x%04x\n", ntohs(icmp->id));
-                        logger_info("    Sequence: %d\n", ntohs(icmp->sequence));
-                        logger_info("    Checksum: 0x%04x\n", ntohs(icmp->checksum));
-                        logger_info("\n");
-                        logger_info("Ping test SUCCESSFUL!\n");
-                        goto ping_success;
+                    if (ip->protocol == IPPROTO_ICMP) {
+                        icmp_hdr_t *icmp =
+                            (icmp_hdr_t *) (rx_buffer + sizeof(eth_hdr_t) + sizeof(ip_hdr_t));
+                        logger_debug("  ICMP Type: %d\n", icmp->type);
+
+                        if (icmp->type == ICMP_ECHOREPLY) {
+                            logger_info("ICMP Echo Reply Received!\n");
+                            logger_info("  Source IP: %d.%d.%d.%d\n",
+                                        (ip->src_addr >> 0) & 0xFF,
+                                        (ip->src_addr >> 8) & 0xFF,
+                                        (ip->src_addr >> 16) & 0xFF,
+                                        (ip->src_addr >> 24) & 0xFF);
+                            logger_info("  Sequence: %d\n", ntohs(icmp->sequence));
+                            logger_info("  TTL: %d\n", ip->ttl);
+                            successful_replies++;
+                            reply_received = 1;
+                            break;
+                        }
                     }
                 }
             }
         }
+
+        if (!reply_received) {
+            logger_warn("No reply received for ping %d\n", ping_seq);
+        }
+
+        logger_info("\n");
+
+        /* Wait 1 second before next ping (except for the last one) */
+        if (ping_seq < ping_count) {
+            mdelay(1000);
+        }
     }
 
-    logger_warn("No ICMP reply received after %d attempts\n", max_tries);
-    logger_info("Note: Packets were sent successfully (verified by tcpdump)\n");
+    logger_info("=== Ping Statistics ===\n");
+    logger_info("  Packets sent: %d\n", ping_count);
+    logger_info("  Replies received: %d\n", successful_replies);
+    logger_info("  Packet loss: %d%%\n", ((ping_count - successful_replies) * 100) / ping_count);
+    logger_info("\n");
 
 ping_success:
     // 检查是否还有其他包到达（如 ARP）

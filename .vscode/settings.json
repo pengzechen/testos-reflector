@@ -18,6 +18,9 @@
         "t_dw_uart.h": "c",
         "rknpu.h": "c",
         "rkconfig.h": "c",
-        "rkpm.h": "c"
-    }
+        "rkpm.h": "c",
+        "rtl8169.h": "c",
+        "cstdint": "c"
+    },
+    "makefile.configureOnOpen": false
 }

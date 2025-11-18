@@ -12,7 +12,7 @@ typedef short     int16_t;
 typedef int       int32_t;
 typedef long long int64_t;
 
-typedef _Bool bool;
+// typedef _Bool bool;
 #define false 0
 #define true  1
 

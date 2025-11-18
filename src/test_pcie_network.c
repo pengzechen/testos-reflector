@@ -37,6 +37,7 @@ pcie_network_test_main(void)
 
     /* Run the main PCIe ATU test */
     test_dw_pcie_atu();
+   
 
     logger_info("\n");
     logger_info("*************************************************\n");
