@@ -340,7 +340,14 @@ handle_syscall(uint64_t syscall_num,
         case SYS_munmap:
             ret = sys_munmap((void *) arg0, (size_t) arg1);
             break;
-
+        case SYS_tkill:
+            // 简化实现：忽略 kill 调用，返回成功
+            ret = 0;
+            break;
+        case SYS_rt_sigaction:
+            // 简化实现：忽略信号处理设置，返回成功
+            ret = 0;
+            break;
         case SYS_rt_sigprocmask:
             ret = sys_rt_sigprocmask((int) arg0, (const void *) arg1, (void *) arg2, (size_t) arg3);
             break;

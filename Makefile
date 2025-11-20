@@ -100,6 +100,10 @@ flash: $(BIN_TARGET)
 	@echo "烧录内核和用户程序到开发板..."
 	bash tools/orangepi5/make_flash.sh
 
+reboot:
+	@echo "重启开发板..."
+	curl http://192.168.1.24:8080/off && sleep 0.3 && curl http://192.168.1.24:8080/on
+
 # 显示帮助
 help:
 	@echo "Available targets:"

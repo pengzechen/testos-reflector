@@ -458,6 +458,8 @@ t_kernel_main(uint64_t id)
     // patch((void *) 0x8003ecac); 
     // patch((void *) 0x8003ecb0);  // libstdc++.so 的 _ZNSt8ios_base4InitC1Ev debug
     // patch((void *) 0x8003ecb4);  // libstdc++.so 的 _ZNSt8ios_base4InitC1Ev debug
+    // patch((void *) 0x82000000 + 0xa96f0); // a96a0 <__cxa_throw>:
+    // patch((void *) 0x82000000 + 0xa96f8); // a96a0 <__cxa_throw>:
 
     const uint64_t table_addr = 0x7F000000;
     // Initialize the ELF loader
@@ -469,6 +471,7 @@ t_kernel_main(uint64_t id)
     logger_info("Successfully loaded %zu programs\n", loaded);
     elf_loader_list_programs();
 
+    register_ef();
 #if 0
     // 测试dbg断点功能
     patch((void *) (0x81000ef8));

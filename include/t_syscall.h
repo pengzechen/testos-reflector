@@ -17,6 +17,8 @@
 #define SYS_exit           93   // exit process
 #define SYS_exit_group     94   // exit all threads
 #define SYS_getitimer      102  // get interval timer
+#define SYS_tkill          130  // send signal to a thread
+#define SYS_rt_sigaction   134  // signal action
 #define SYS_rt_sigprocmask 135  // change signal mask
 #define SYS_brk            214  // change data segment size
 

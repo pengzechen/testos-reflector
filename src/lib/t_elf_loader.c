@@ -29,8 +29,12 @@
 static elf_descriptor_t loaded_programs[MAX_ELF_FILES];
 static size_t           num_loaded_programs = 0;
 
+
 void
 call_init_array(const elf_descriptor_t *desc);
+
+void
+register_eh_frame(const elf_descriptor_t *desc);
 
 /**
  * Global pointer to bootloader table for dependency resolution
@@ -453,47 +457,7 @@ elf_loader_resolve_symbol(const char *symbol_name)
 /**
  * Call all functions in the .init_array section of an ELF file
  */
-// void
-// call_init_array(const elf_descriptor_t *desc)
-// {
-//     logger_warn("Entering call_init_array for %s\n", desc->name);
 
-//     const elf64_ehdr_t *ehdr     = (const elf64_ehdr_t *) desc->start_addr;
-//     const uint8_t      *elf_base = (const uint8_t *) desc->start_addr;
-//     const elf64_phdr_t *phdr     = (const elf64_phdr_t *) (elf_base + ehdr->e_phoff);
-
-//     logger_warn("ELF header and program header parsed for %s\n", desc->name);
-
-//     for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
-//         if (phdr[i].p_type == PT_DYNAMIC) {
-//             logger_warn("Processing PT_DYNAMIC segment %u\n", i);
-//             const elf64_dyn_t *shdr = (const elf64_dyn_t *) (elf_base + phdr[i].p_offset);
-
-//             for (uint16_t j = 0; shdr[j].d_tag != DT_NULL; j++) {
-//                 if (shdr[j].d_tag == DT_INIT_ARRAY) {
-//                     logger_warn("Found .init_array section for %s\n", desc->name);
-//                     const void (**init_array)(void) =
-//                         (const void (**)(void))(elf_base + shdr[j].d_un.d_ptr);
-//                     size_t count = shdr[j].d_un.d_val / sizeof(void (*)(void));
-//                     logger_warn("Found %zu .init_array functions for %s\n", count, desc->name);
-
-//                     // for (size_t k = 0; k < count; k++) {
-//                     //     if (init_array[k]) {
-//                     //         logger_warn("Calling .init_array function %zu at %p\n",
-//                     //                     k,
-//                     //                     (void *) init_array[k]);
-//                     //         // init_array[k]();
-//                     //     } else {
-//                     //         logger_warn(".init_array function %zu is NULL\n", k);
-//                     //     }
-//                     // }
-//                 }
-//             }
-//         }
-//     }
-
-//     logger_warn("Exiting call_init_array for %s\n", desc->name);
-// }
 void
 call_init_array(const elf_descriptor_t *desc)
 {
@@ -543,5 +507,65 @@ call_init_array(const elf_descriptor_t *desc)
         }
     } else {
         logger_warn("%s: no .init_array found or size=0\n", desc->name);
+    }
+}
+
+void
+register_ef()
+{
+    elf_descriptor_t *desc = loaded_programs;
+
+    for (size_t i = 0; i < num_loaded_programs; i++) {
+        desc = &loaded_programs[i];
+        // Register EH frame information
+        register_eh_frame(desc);
+    }
+}
+
+/**
+ * Register EH frame information for exception handling
+ */
+void
+register_eh_frame(const elf_descriptor_t *desc)
+{
+    const elf64_ehdr_t *ehdr     = (const elf64_ehdr_t *) desc->start_addr;
+    const uint8_t      *elf_base = (const uint8_t *) desc->start_addr;
+    const elf64_shdr_t *shdr     = (const elf64_shdr_t *) (elf_base + ehdr->e_shoff);
+
+    // Get section name string table
+    if (ehdr->e_shstrndx == SHN_UNDEF) {
+        logger_warn("%s: no section name string table\n", desc->name);
+        return;
+    }
+    const elf64_shdr_t *shstr_shdr = &shdr[ehdr->e_shstrndx];
+    const char         *shstrtab   = (const char *) (elf_base + shstr_shdr->sh_offset);
+
+    uint64_t eh_frame_addr     = 0;
+    uint64_t eh_frame_hdr_addr = 0;
+
+    // Find .eh_frame and .eh_frame_hdr sections
+    for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
+        const char *sec_name = shstrtab + shdr[i].sh_name;
+        if (strcmp(sec_name, ".eh_frame") == 0) {
+            eh_frame_addr = desc->start_addr + shdr[i].sh_addr;
+        } else if (strcmp(sec_name, ".eh_frame_hdr") == 0) {
+            eh_frame_hdr_addr = desc->start_addr + shdr[i].sh_addr;
+        }
+    }
+
+    if (eh_frame_addr && eh_frame_hdr_addr) {
+        logger_warn("%s: registering EH frame at 0x%llx, hdr at 0x%llx\n",
+                    desc->name,
+                    eh_frame_addr,
+                    eh_frame_hdr_addr);
+        typedef void (*register_frame_info_t)(void *, void *);
+        // Resolved symbol '__register_frame_info' to 0x8100ff40 (in libgcc_s.so.1)
+        register_frame_info_t reg_func = (register_frame_info_t) (0x8100ff40);
+        reg_func((void *)eh_frame_addr, (void *)eh_frame_hdr_addr);
+    } else {
+        logger_warn("%s: EH frame sections not found (eh_frame: 0x%llx, eh_frame_hdr: 0x%llx)\n",
+                    desc->name,
+                    eh_frame_addr,
+                    eh_frame_hdr_addr);
     }
 }

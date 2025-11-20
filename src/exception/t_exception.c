@@ -104,7 +104,7 @@ handle_sync_exception(uint64_t *stack_pointer)
         dw_uart_getchar();
         
         restore((void*)el1_ctx->elr);
-        el1_ctx->elr += 4;  // 跳过 brk 指令
+        // el1_ctx->elr += 4;  // 跳过 brk 指令
         return;
     }
     // 其他异常的处理

@@ -112,5 +112,8 @@ elf_loader_list_programs(void);
 uint64_t
 elf_loader_resolve_symbol(const char *symbol_name);
 
+void
+register_ef();
+
 
 #endif /* T_ELF_LOADER_H */

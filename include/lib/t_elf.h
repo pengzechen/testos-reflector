@@ -67,6 +67,9 @@
 #define SHT_DYNSYM   11  // Dynamic linker symbol table
 #define SHT_INIT_ARRAY 14 // Section type for .init_array
 
+/* Special Section Indices */
+#define SHN_UNDEF 0
+
 /* Dynamic Table Tags */
 #define DT_NULL     0   // End of dynamic section
 #define DT_NEEDED   1   // Name of needed library
