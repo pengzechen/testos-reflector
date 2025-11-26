@@ -5,23 +5,7 @@
 
 size_t      g_cache_line_size;
 
-static inline void
-__clean_dcache_one(const void *addr)
-{
-    __asm__ __volatile__("dc cvac, %0" : : "r"(addr));
-}
 
-static inline void
-__invalidate_dcache_one(const void *addr)
-{
-    __asm__ __volatile__("dc ivac, %0" : : "r"(addr));
-}
-
-static inline void
-__clean_and_invalidate_dcache_one(const void *addr)
-{
-    __asm__ __volatile__("dc civac, %0" ::"r"(addr));
-}
 
 int32_t
 clean_dcache_va_range(const void *p, unsigned long size)

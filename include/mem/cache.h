@@ -15,6 +15,27 @@
 #define MIN_CACHELINE_SIZE     16   // 最小缓存行大小(字节)
 #define MAX_CACHELINE_SIZE     256  // 最大缓存行大小(字节)
 
+static inline void
+__clean_dcache_one(const void *addr)
+{
+    __asm__ __volatile__("dc cvac, %0" : : "r"(addr));
+}
+
+static inline void
+__invalidate_dcache_one(const void *addr)
+{
+    __asm__ __volatile__("dc ivac, %0" : : "r"(addr));
+}
+
+static inline void ic_ivau(void *addr) {
+    __asm__ volatile("ic ivau, %0" :: "r"(addr) : "memory");
+}
+
+static inline void
+__clean_and_invalidate_dcache_one(const void *addr)
+{
+    __asm__ __volatile__("dc civac, %0" ::"r"(addr));
+}
 
 void
 init_cpu_cacheline_size(void);

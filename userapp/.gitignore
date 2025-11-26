@@ -1,0 +1,24 @@
+# 编译生成的可执行文件
+*.elf
+*.stripped.elf
+
+# GCC RTL dump 文件（编译中间过程）
+*.expand
+*.vregs
+*.into_cfglayout
+*.[0-9][0-9][0-9]r.*
+
+# 目标文件
+*.o
+*.obj
+
+# 其他编译产物
+*.a
+*.so
+*.dylib
+*.dll
+
+# 临时文件
+*.tmp
+*~
+.*.swp
