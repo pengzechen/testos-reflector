@@ -468,6 +468,8 @@ t_kernel_main(uint64_t id)
     extern void rknpu_test_conv2d(void);
     extern void rknpu_test_dwconv2d(void);
     extern void rknpu_test_tile_matmul(void);
+    extern void rknpu_test_avgpool(void);
+    extern void rknpu_test_maxpool(void);
 
     // RKNPU 初始化测试
     rknpu_init();
@@ -477,6 +479,8 @@ t_kernel_main(uint64_t id)
     rknpu_test_conv2d();
     rknpu_test_dwconv2d();
     rknpu_test_tile_matmul();
+    rknpu_test_avgpool();
+    rknpu_test_maxpool();
 
     }
 #endif
