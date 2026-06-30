@@ -58,8 +58,8 @@ buffer_get(dw_uart_buffer_t *buf, char *c)
 }
 
 /// DW_UART_THR 空了，可以写入新数据时，硬件会置位
-static bool
-dw_uart_tx_ready(void)
+static bool __attribute__((unused))
+dw_uart_tx_ready(void) 
 {
     return (read32((void *) DW_UART_LSR) & DW_UART_LSR_THRE) != 0;
 }

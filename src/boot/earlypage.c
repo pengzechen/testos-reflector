@@ -54,6 +54,15 @@ init_page_table()
     set_block_entry(&pt1[2], 0x80000000, PTE_NORMAL_MEMORY, 0);  // 普通内存
 
     set_block_entry(&pt1[3], 0xc0000000, PTE_DEVICE_MEMORY, 0);  // 设备内存
+
+    set_block_entry(&pt1[39], 0x9c0000000UL, PTE_DEVICE_MEMORY, 0);
+    set_block_entry(&pt1[41], 0xa40000000UL, PTE_DEVICE_MEMORY, 0);  // PCIe DBI 区域
+
+    // Ensure page table writes are visible to the MMU
+    asm volatile("dsb sy" ::: "memory");
+    asm volatile("tlbi vmalle1" ::: "memory");
+    asm volatile("dsb sy" ::: "memory");
+    asm volatile("isb" ::: "memory");
 }
 
 void

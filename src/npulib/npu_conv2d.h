@@ -29,8 +29,10 @@ typedef struct {
 
 int gen_conv2d_int8(conv2d_params_t *params);
 int gen_conv2d_fp16(conv2d_params_t *params);
+int gen_dwconv2d_int8(conv2d_params_t *params);
 
 int conv2d_feature_data(int C, int H, int W, int C2, int c, int h, int w);
 int conv2d_weight(int in_c, int kh, int kw, int out_c, int oc, int ic, int krow, int kcol, int is_int8);
+int dwconv2d_weight(int kh, int kw, int channels, int ch, int krow, int kcol);
 
 #endif

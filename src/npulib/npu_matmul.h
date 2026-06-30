@@ -34,12 +34,15 @@ typedef struct
     uint64_t *tasks;
 
     uint8_t fp32tofp16;
+    uint16_t num_tiles;
 } matmul_params_t;
 
 int
 gen_matmul_fp16(matmul_params_t *params);
 int
 gen_matmul_int8(matmul_params_t *params);
+int
+gen_matmul_int8_tiled(matmul_params_t *params);
 int
 feature_data(int C, int H, int W, int C2, int c, int h, int w);
 int

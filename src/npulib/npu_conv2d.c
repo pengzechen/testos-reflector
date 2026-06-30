@@ -269,6 +269,21 @@ gen_conv2d_fp16(conv2d_params_t *p)
     return 0;
 }
 
+int
+gen_dwconv2d_int8(conv2d_params_t *p)
+{
+    /*
+     * RK3588 NPU implements depthwise conv as normal conv with expanded
+     * weights (only diagonal oc==ic non-zero). The "weight_expand" path
+     * in librknnrt confirms this — kernel_groups register is NOT used.
+     *
+     * Caller must lay out weights using conv2d_weight() with only
+     * the diagonal (oc==ic) positions filled, rest zeroed.
+     */
+    p->out_c = p->in_c;
+    return gen_conv2d_int8(p);
+}
+
 /*
  * Conv2D feature data layout: NC1HWC2 format (same as matmul).
  * C2 = 16 for FP16, 32 for INT8.
@@ -302,4 +317,15 @@ conv2d_weight(int in_c, int kh, int kw, int out_c, int oc, int ic, int krow, int
         return weight_int8(total_c, oc, flat_c);
     else
         return weight_fp16(total_c, oc, flat_c);
+}
+
+/*
+ * Depthwise conv weight layout (weight_expand approach).
+ * Maps a depthwise kernel element to the diagonal position in normal conv format.
+ * ch is 1-based channel index, krow/kcol are 0-based.
+ */
+int
+dwconv2d_weight(int kh, int kw, int channels, int ch, int krow, int kcol)
+{
+    return conv2d_weight(channels, kh, kw, channels, ch, ch, krow, kcol, 1);
 }

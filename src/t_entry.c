@@ -8,6 +8,7 @@
 #include "npu/rknpu.h"
 #include "dev/cru.h"
 #include "dev/scmi.h"
+#include "dev/pcie.h"
 
 #include "t_sysreg.h"
 
@@ -458,14 +459,24 @@ t_kernel_main(uint64_t id)
     t_mem_run_stress_tests();
 #endif
 
+    // PCIe WiFi card init (RTL8852BE on pcie2x1l0)
+    // pcie_init();
+
 #if 1
     {
+    extern void rknpu_test_matmul(void);
+    extern void rknpu_test_conv2d(void);
+    extern void rknpu_test_dwconv2d(void);
+    extern void rknpu_test_tile_matmul(void);
+
     // RKNPU 初始化测试
     rknpu_init();
 
     // 测试
     rknpu_test_matmul();
     rknpu_test_conv2d();
+    rknpu_test_dwconv2d();
+    rknpu_test_tile_matmul();
 
     }
 #endif

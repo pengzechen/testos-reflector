@@ -483,6 +483,157 @@ gen_matmul_int8(matmul_params_t *params)
     return 0;
 }
 
+/*
+ * Tiled matmul: splits M dimension into tiles that fit in CBUF.
+ * Generates one ops[108] block per tile in params->tasks.
+ * Sets params->num_tiles on success.
+ */
+int
+gen_matmul_int8_tiled(matmul_params_t *params)
+{
+    unsigned int k = params->k;
+    unsigned int n = params->n;
+    unsigned int m = params->m;
+
+    unsigned int weight_bytes = ((k + 31) / 32) * ((n + 31) / 32) * 32 * 32;
+    unsigned int weight_banks = weight_bytes / NPU_CBUF_BANK_SIZE;
+    if (weight_bytes % NPU_CBUF_BANK_SIZE) weight_banks++;
+    if (weight_banks >= NPU_CBUF_BANKS)
+        return -2;
+
+    unsigned int avail_banks = NPU_CBUF_BANKS - weight_banks;
+    unsigned int max_m = (avail_banks * NPU_CBUF_BANK_SIZE) / k;
+    max_m = (max_m / 4) * 4;
+    if (max_m == 0)
+        return -1;
+
+    if (max_m >= m) {
+        params->num_tiles = 1;
+        return gen_matmul_int8(params);
+    }
+
+    unsigned int num_tiles = (m + max_m - 1) / max_m;
+    params->num_tiles = num_tiles;
+
+    unsigned int m_offset = 0;
+    for (unsigned int t = 0; t < num_tiles; t++) {
+        unsigned int tile_m = (m - m_offset > max_m) ? max_m : (m - m_offset);
+
+        npu_cna_desc  cna_desc;
+        npu_core_desc core_desc;
+        npu_dpu_desc  dpu_desc;
+        int surf_stride;
+
+        cna_desc.conv_mode      = direct_convolution;
+        cna_desc.in_precision   = precision_int8;
+        cna_desc.proc_precision = precision_int8;
+        cna_desc.kernel_groups  = 0;
+        cna_desc.feature_grains = tile_m + 1;
+        cna_desc.conv_x_stride  = 1;
+        cna_desc.conv_y_stride  = 1;
+
+        cna_desc.datain_width    = 1;
+        cna_desc.datain_height   = tile_m;
+        cna_desc.datain_channel  = k;
+        cna_desc.dataout_width   = 1;
+        cna_desc.dataout_height  = tile_m;
+        cna_desc.dataout_atomics = tile_m;
+
+        cna_desc.weight_width   = 1;
+        cna_desc.weight_height  = 1;
+        cna_desc.weight_kernels = n;
+        cna_desc.weight_bytes_per_kernel = k;
+        cna_desc.weight_bytes   = weight_bytes;
+
+        unsigned int fd_bytes = tile_m * k;
+        unsigned int fd_banks = fd_bytes / NPU_CBUF_BANK_SIZE;
+        if (fd_bytes % NPU_CBUF_BANK_SIZE) fd_banks++;
+
+        cna_desc.weight_bank  = NPU_CBUF_BANKS - fd_banks;
+        cna_desc.data_bank    = fd_banks;
+        cna_desc.data_entries = k / 64;
+        if (k % 64) cna_desc.data_entries++;
+
+        cna_desc.data_sign    = 0x1;
+        cna_desc.cvt_type     = 0x1;
+        cna_desc.cvt_bypass   = 0x1;
+        cna_desc.cvt_scale0   = 0x1;
+        cna_desc.cvt_scale1   = 0x1;
+        cna_desc.cvt_scale2   = 0x1;
+        cna_desc.cvt_scale3   = 0x1;
+        cna_desc.fc_skip_en   = 0;
+        cna_desc.data_offset  = 0;
+        cna_desc.pad_left     = 0;
+        cna_desc.pad_top      = 0;
+
+        cna_desc.feature_base_addr = params->input_dma + m_offset * 16;
+        cna_desc.weight_offset     = 0;
+        cna_desc.weight_burst_len  = 0xf;
+        cna_desc.data_burst_len    = 0xf;
+        cna_desc.line_stride       = 4;
+        surf_stride = 4 * ((int)(params->m / 4) - 1);
+        cna_desc.surf_stride = surf_stride < 0 ? surf_stride + 1 : surf_stride;
+        cna_desc.dma_width   = 1;
+        cna_desc.dma_height  = tile_m;
+        cna_desc.dma_channel = k;
+        cna_desc.decompress_addr0 = params->weights_dma;
+
+        core_desc.proc_precision  = precision_int8;
+        core_desc.qd_en           = 0;
+        core_desc.dataout_height  = tile_m - 1;
+        core_desc.dataout_width   = 0;
+        core_desc.dataout_channel = n - 1;
+
+        dpu_desc.burst_len        = 0xf;
+        dpu_desc.conv_mode        = direct_convolution;
+        dpu_desc.output_mode      = 0x2;
+        dpu_desc.flying_mode      = 0x0;
+        dpu_desc.out_precision    = precision_int32;
+        dpu_desc.in_precision     = precision_int8;
+        dpu_desc.proc_precision   = precision_int8;
+        dpu_desc.dst_base_addr    = params->output_dma + m_offset * 16;
+        dpu_desc.dst_surf_stride  = params->m;
+        dpu_desc.width            = 0;
+        dpu_desc.height           = tile_m - 1;
+        dpu_desc.channel          = n - 1;
+        dpu_desc.bs_bypass        = 1;
+        dpu_desc.bs_alu_bypass    = 1;
+        dpu_desc.bs_mul_bypass    = 1;
+        dpu_desc.bs_relu_bypass   = 1;
+        dpu_desc.bn_bypass        = 1;
+        dpu_desc.bn_alu_bypass    = 1;
+        dpu_desc.bn_mul_bypass    = 1;
+        dpu_desc.bn_relu_bypass   = 1;
+        dpu_desc.ew_bypass        = 1;
+        dpu_desc.ew_op_bypass     = 1;
+        dpu_desc.ew_lut_bypass    = 1;
+        dpu_desc.ew_op_cvt_bypass = 1;
+        dpu_desc.ew_relu_bypass   = 1;
+        dpu_desc.fp32tofp16_en    = 0;
+        dpu_desc.out_cvt_scale    = 1;
+        dpu_desc.size_e_2         = 7;
+        dpu_desc.size_e_1         = 7;
+        dpu_desc.size_e_0         = 7;
+        dpu_desc.od_bypass        = 1;
+        dpu_desc.width_wdma       = 0;
+        dpu_desc.height_wdma      = tile_m - 1;
+        dpu_desc.channel_wdma     = n - 1;
+        dpu_desc.surf_add         = dpu_desc.dst_surf_stride * 8;
+
+        gen_matmul_task(params->tasks + t * 108, &cna_desc, &core_desc, &dpu_desc);
+
+        /* Overwrite ops[105]: write correct data_amount (53) to PC_REGISTER_AMOUNTS.
+         * The PC engine needs this to know the step size between tasks. */
+        uint32_t regcfg_amount = 104;
+        uint32_t data_amount = (regcfg_amount + 4 + 2 - 1) / 2 - 1;  /* = 53 */
+        params->tasks[t * 108 + 105] = NPUOP(OP_REG_PC, data_amount, PC_REGISTER_AMOUNTS);
+
+        m_offset += tile_m;
+    }
+
+    return 0;
+}
+
 int
 feature_data(int C, int H, int W, int C2, int c, int h, int w)
 {

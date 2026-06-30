@@ -218,9 +218,8 @@ job_commit_pc(void    *task_ptr,
     logger_info("pc task control: 0x%x\n", pc_task_control);
     write32(pc_task_control, (void *) (NPU0_BASE + RKNPU_PC_TASK_CONTROL));
 
-    // 写task_base_addr
-    // 反编译demo写的是0
-    // write32(0, (void *) (NPU0_BASE + RKNPU_PC_DMA_BASE_ADDR));
+    // 写task_base_addr (与kernel driver一致，librknnrt设为0)
+    write32(0, (void *) (NPU0_BASE + RKNPU_PC_DMA_BASE_ADDR));
 
     //提交
     write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_OP_EN));
@@ -269,7 +268,12 @@ job_wait_complete(uint32_t core, uint32_t task_number, uint32_t tmo)
             l++;
         }
     } while (tmo > 0);
+    uint32_t task_status = read32((void *) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
+    uint32_t int_status = read32((void *) (NPU0_BASE + RKNPU_INT_STATUS));
+    uint32_t int_raw = read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS));
     logger_error("RKNPU: Job wait timeout.\n");
+    logger_error("  task_status=0x%x (completed=%d)\n", task_status, task_status & 0xFFF);
+    logger_error("  int_status=0x%x, int_raw=0x%x\n", int_status, int_raw);
     return;
 }
 
@@ -287,6 +291,8 @@ rknpu_submit_task(npu_submit_t *submit)
 
     void *task_ptr      = (void *) (uint64_t) submit->task_obj_addr;
     void *task_ptr_phys = (void *) (uint64_t) submit->task_obj_addr;
+
+    job_done_num = 0;
 
     show_task_status(__FILE__, __LINE__);
     logger_info("status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_STATUS)));
