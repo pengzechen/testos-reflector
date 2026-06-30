@@ -25,6 +25,11 @@ typedef struct {
 
     uint8_t  activation;
     uint32_t relu6_value;
+
+    uint8_t  out_int8;
+    int32_t  cvt_offset;
+    uint16_t cvt_scale;
+    uint8_t  cvt_shift;
 } conv2d_params_t;
 
 int gen_conv2d_int8(conv2d_params_t *params);

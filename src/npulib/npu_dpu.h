@@ -59,6 +59,8 @@ typedef struct npu_dpu_desc
     uint8_t  ew_relu_bypass;    // 0x4070
     uint8_t  fp32tofp16_en;     // 0x4084
     uint16_t out_cvt_scale;     // 0x4084
+    int32_t  out_cvt_offset;    // 0x4080
+    uint8_t  out_cvt_shift;     // 0x4088
     uint32_t surf_add;          // 0x40C0
 } npu_dpu_desc;
 

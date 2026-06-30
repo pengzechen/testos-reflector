@@ -103,11 +103,17 @@ gen_conv2d_int8(conv2d_params_t *p)
     dpu_desc.conv_mode        = direct_convolution;
     dpu_desc.output_mode      = 0x2;
     dpu_desc.flying_mode      = 0x0;
-    dpu_desc.out_precision    = precision_int32;
     dpu_desc.in_precision     = precision_int8;
     dpu_desc.proc_precision   = precision_int8;
     dpu_desc.dst_base_addr    = p->output_dma;
+
+    if (p->out_int8)
+        dpu_desc.out_precision = precision_int8;
+    else
+        dpu_desc.out_precision = precision_int32;
+
     dpu_desc.dst_surf_stride  = out_h * out_w;
+
     dpu_desc.width            = core_desc.dataout_width;
     dpu_desc.height           = core_desc.dataout_height;
     dpu_desc.channel          = core_desc.dataout_channel;
@@ -115,7 +121,7 @@ gen_conv2d_int8(conv2d_params_t *p)
     dpu_desc.bs_alu_bypass    = 1;
     dpu_desc.bs_mul_bypass    = 1;
     dpu_desc.bs_relu_bypass   = (p->activation != ACTIVATION_NONE) ? 0 : 1;
-    dpu_desc.bn_bypass        = 1;
+    dpu_desc.bn_bypass        = p->out_int8 ? 0 : 1;
     dpu_desc.bn_alu_bypass    = 1;
     dpu_desc.bn_mul_bypass    = 1;
     dpu_desc.bn_relu_bypass   = 1;
@@ -125,15 +131,35 @@ gen_conv2d_int8(conv2d_params_t *p)
     dpu_desc.ew_op_cvt_bypass = 1;
     dpu_desc.ew_relu_bypass   = 1;
     dpu_desc.fp32tofp16_en    = 0;
-    dpu_desc.out_cvt_scale    = 1;
-    dpu_desc.size_e_2         = 7;
-    dpu_desc.size_e_1         = 7;
-    dpu_desc.size_e_0         = 7;
-    dpu_desc.od_bypass        = 1;
+
+    if (p->out_int8) {
+        dpu_desc.out_cvt_scale  = p->cvt_scale;
+        dpu_desc.out_cvt_offset = p->cvt_offset;
+        dpu_desc.out_cvt_shift  = p->cvt_shift;
+    } else {
+        dpu_desc.out_cvt_scale  = 1;
+        dpu_desc.out_cvt_offset = 0;
+        dpu_desc.out_cvt_shift  = 0;
+    }
+
+    if (p->out_int8) {
+        dpu_desc.size_e_2 = 1;
+        dpu_desc.size_e_1 = 1;
+        dpu_desc.size_e_0 = 1;
+    } else {
+        dpu_desc.size_e_2 = 7;
+        dpu_desc.size_e_1 = 7;
+        dpu_desc.size_e_0 = 7;
+    }
+    dpu_desc.od_bypass        = p->out_int8 ? 0 : 1;
     dpu_desc.width_wdma       = core_desc.dataout_width;
     dpu_desc.height_wdma      = core_desc.dataout_height;
     dpu_desc.channel_wdma     = core_desc.dataout_channel;
-    dpu_desc.surf_add         = dpu_desc.dst_surf_stride * 8;
+
+    if (p->out_int8)
+        dpu_desc.surf_add = dpu_desc.dst_surf_stride * 2;
+    else
+        dpu_desc.surf_add = dpu_desc.dst_surf_stride * 8;
 
     gen_conv2d_task(p->tasks, &cna_desc, &core_desc, &dpu_desc);
 
@@ -249,6 +275,8 @@ gen_conv2d_fp16(conv2d_params_t *p)
     dpu_desc.ew_relu_bypass   = 1;
     dpu_desc.fp32tofp16_en    = p->fp32tofp16 & 1;
     dpu_desc.out_cvt_scale    = 1;
+    dpu_desc.out_cvt_offset   = 0;
+    dpu_desc.out_cvt_shift    = 0;
     if (!p->fp32tofp16) {
         dpu_desc.size_e_2 = 3; dpu_desc.size_e_1 = 3; dpu_desc.size_e_0 = 3;
     } else {

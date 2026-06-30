@@ -167,10 +167,10 @@ gen_matmul_task(uint64_t      *ops,
     ops[76]  = NPUOP(OP_REG_DPU, 0x0, DPU_EW_CVT_OFFSET_VALUE);
     ops[77]  = NPUOP(OP_REG_DPU, 0x1, DPU_EW_CVT_SCALE_VALUE);
     ops[78]  = NPUOP(OP_REG_DPU, 0x0, DPU_EW_RELUX_CMP_VALUE);
-    ops[79]  = NPUOP(OP_REG_DPU, 0x0, DPU_OUT_CVT_OFFSET);
+    ops[79]  = NPUOP(OP_REG_DPU, dpu_desc->out_cvt_offset, DPU_OUT_CVT_OFFSET);
     value    = ((dpu_desc->fp32tofp16_en & 0x1) << 16) | (dpu_desc->out_cvt_scale & 0xFFFF);
     ops[80]  = NPUOP(OP_REG_DPU, value, DPU_OUT_CVT_SCALE);
-    ops[81]  = NPUOP(OP_REG_DPU, 0x0, DPU_OUT_CVT_SHIFT);
+    ops[81]  = NPUOP(OP_REG_DPU, dpu_desc->out_cvt_shift & 0x1F, DPU_OUT_CVT_SHIFT);
     ops[82]  = NPUOP(OP_REG_DPU, 0x0, DPU_EW_OP_VALUE_0);
     ops[83]  = NPUOP(OP_REG_DPU, 0x0, DPU_EW_OP_VALUE_1);
     ops[84]  = NPUOP(OP_REG_DPU, 0x0, DPU_EW_OP_VALUE_2);
@@ -324,6 +324,8 @@ gen_matmul_fp16(matmul_params_t *params)
     dpu_desc.ew_relu_bypass   = 1;
     dpu_desc.fp32tofp16_en    = params->fp32tofp16 & 0x1;
     dpu_desc.out_cvt_scale    = 1;
+    dpu_desc.out_cvt_offset   = 0;
+    dpu_desc.out_cvt_shift    = 0;
     if (params->fp32tofp16 == 0) {
         dpu_desc.size_e_2 = 3;
         dpu_desc.size_e_1 = 3;
@@ -469,6 +471,8 @@ gen_matmul_int8(matmul_params_t *params)
     dpu_desc.ew_relu_bypass   = 1;
     dpu_desc.fp32tofp16_en    = 0;
     dpu_desc.out_cvt_scale    = 1;
+    dpu_desc.out_cvt_offset   = 0;
+    dpu_desc.out_cvt_shift    = 0;
     dpu_desc.size_e_2         = 7;
     dpu_desc.size_e_1         = 7;
     dpu_desc.size_e_0         = 7;
@@ -611,6 +615,8 @@ gen_matmul_int8_tiled(matmul_params_t *params)
         dpu_desc.ew_relu_bypass   = 1;
         dpu_desc.fp32tofp16_en    = 0;
         dpu_desc.out_cvt_scale    = 1;
+        dpu_desc.out_cvt_offset   = 0;
+        dpu_desc.out_cvt_shift    = 0;
         dpu_desc.size_e_2         = 7;
         dpu_desc.size_e_1         = 7;
         dpu_desc.size_e_0         = 7;
