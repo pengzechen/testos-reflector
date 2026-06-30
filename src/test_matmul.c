@@ -121,11 +121,11 @@ rand_int()
 // 主测试函数
 // ======================================================
 void
-rknpu_test(void)
+rknpu_test_matmul(void)
 {
-    unsigned int M = 544;
-    unsigned int K = 544;
-    unsigned int N = 4096;
+    unsigned int M = 32;
+    unsigned int K = 64;
+    unsigned int N = 32;
 
     if ((M <= 0) || (M > MAX_M) | (((M % 4) != 0) && (M != 1))) {
         logger_error("M [%d] is out of range or not a mutliple of 4 \n", M);

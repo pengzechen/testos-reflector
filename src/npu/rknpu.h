@@ -285,7 +285,10 @@ void
 rknpu_init(void);
 
 extern void
-rknpu_test();
+rknpu_test_matmul();
+
+extern void
+rknpu_test_conv2d();
 
 void
 rknpu_submit_task(npu_submit_t *submit);

@@ -458,20 +458,14 @@ t_kernel_main(uint64_t id)
     t_mem_run_stress_tests();
 #endif
 
-#if 0
+#if 1
     {
-    // scmi 时钟
-    // todo fix.
-    // enable_scmi_clock(6);
-
-    // cru 时钟
-    // enable_rk3588_npu_clocks();
-
     // RKNPU 初始化测试
     rknpu_init();
 
     // 测试
-    rknpu_test();
+    rknpu_test_matmul();
+    rknpu_test_conv2d();
 
     }
 #endif
