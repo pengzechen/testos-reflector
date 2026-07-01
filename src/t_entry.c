@@ -477,6 +477,7 @@ t_kernel_main(uint64_t id)
     extern void rknpu_test_mul(void);
     extern void rknpu_test_sigmoid(void);
     extern void rknpu_test_softmax(void);
+    extern void rknpu_test_llm(void);
 
     // RKNPU 初始化测试
     rknpu_init();
@@ -495,6 +496,8 @@ t_kernel_main(uint64_t id)
     rknpu_test_mul();
     rknpu_test_sigmoid();
     rknpu_test_softmax();
+
+    rknpu_test_llm();
 
     }
 #endif

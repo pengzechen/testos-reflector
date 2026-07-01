@@ -18,7 +18,7 @@ BUILD_DIR = build
 
 # 编译标志
 CFLAGS = -g -O0 -Wall -nostdlib -nostartfiles -ffreestanding -mgeneral-regs-only
-CFLAGS += -I$(INCLUDE_DIR) -D__LOAD_ADDR__=0x400000 -DT_SMP_NUM=$(SMP)
+CFLAGS += -I$(INCLUDE_DIR) -I$(SRC_DIR) -D__LOAD_ADDR__=0x400000 -DT_SMP_NUM=$(SMP)
 ASFLAGS = -g -O0 -Wall -I$(INCLUDE_DIR) -D__LOAD_ADDR__=0x400000 -DT_SMP_NUM=$(SMP)
 
 # 链接标志

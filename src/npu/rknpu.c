@@ -127,7 +127,6 @@ rknpu_fuzz_status(uint32_t status)
 static void
 job_done()
 {
-    logger("RKNPU: irq handler\n");
     job_done_num++;
 
     uint32_t status;
@@ -135,7 +134,6 @@ job_done()
 
     uint32_t task_counter = status & RK3588_CONFIG.pc_task_number_mask;
     uint32_t fuzz         = rknpu_fuzz_status(status);
-    logger_info("fuzz: %x\n", fuzz);
     // 0x300 come from task.int_mask
     if (fuzz != 0x300) {
         logger_error("invalid irq status: 0x%x\n", status);
@@ -145,11 +143,8 @@ job_done()
         return;
     }
 
-
-    logger_info("status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_STATUS)));
-    logger_info("row status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS)));
+    (void)task_counter;
     write32(INT_CLEAR_VALUE, (void *) (NPU0_BASE + RKNPU_INT_CLEAR));
-    logger("RKNPU: Job completed, times: %d.\n", job_done_num);
 }
 
 void
@@ -180,15 +175,8 @@ job_commit_pc(void    *task_ptr,
     int task_pp_en           = flags & RKNPU_JOB_PINGPONG ? 1 : 0;
     int pc_task_number_bits  = RK3588_CONFIG.pc_task_number_bits;
 
-    logger_info("RKNPU: Committed PC job: task_start=%d, task_number=%d\n",
-                task_start,
-                task_number);
-    logger_info("RKNPU: First task regcmd_addr=0x%llx, regcfg_amount=%d\n",
-                first_task->regcmd_addr,
-                first_task->regcfg_amount);
-
-    logger_info("first task addr: %p, last task addr: %p\n", first_task, last_task);
-    logger_info("int_mask: 0x%x, int_clear: 0x%x\n", first_task->int_mask, first_task->int_clear);
+    (void)task_ptr_phys;
+    (void)core;
 
     // switch to slave mode
     write32(0x1, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
@@ -197,15 +185,12 @@ job_commit_pc(void    *task_ptr,
     write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x1004)));
     write32((0xe + 0x10000000 * 0), (void *) (NPU0_BASE + (0x3004)));
 
-    logger_info("reg addr: 0x%x\n", first_task->regcmd_addr);
-    // dump_reg(first_task->regcmd_addr, NPU_REG_NUM);
     // 写regcmd地址和数据量
     write32(first_task->regcmd_addr, (void *) (NPU0_BASE + RKNPU_PC_DATA_ADDR));
     uint32_t data_amount =
         (first_task->regcfg_amount + RKNPU_PC_DATA_EXTRA_AMOUNT + pc_data_amount_scale - 1) /
             pc_data_amount_scale -
         1;
-    logger_info("data amount: %d\n", data_amount);
     write32(data_amount, (void *) (NPU0_BASE + RKNPU_PC_DATA_AMOUNT));
 
     // 写intmask
@@ -215,7 +200,6 @@ job_commit_pc(void    *task_ptr,
 
     // 写task控制
     uint32_t pc_task_control = ((0x6 | task_pp_en) << pc_task_number_bits) | task_number;
-    logger_info("pc task control: 0x%x\n", pc_task_control);
     write32(pc_task_control, (void *) (NPU0_BASE + RKNPU_PC_TASK_CONTROL));
 
     // 写task_base_addr (与kernel driver一致，librknnrt设为0)
@@ -244,8 +228,6 @@ check_job_done_noirq()
     status        = read32((void *) (NPU0_BASE + RKNPU_INT_STATUS));
     uint32_t fuzz = rknpu_fuzz_status(status);
     if (fuzz == 0x300) {
-        logger_info("status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_STATUS)));
-        logger_info("row status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS)));
         return true;
     }
     return false;
@@ -257,10 +239,7 @@ job_wait_complete(uint32_t core, uint32_t task_number, uint32_t tmo)
     (void) core;
     int l = 0;
     do {
-        // 简单轮询中断状态寄存器
         if (check_job_done()) {
-            logger_info("wait loop: %d\n", l);
-            logger_info("RKNPU: Job completed successfully.\n");
             return;
         } else {
             timer_delay_ms(1);
@@ -294,13 +273,7 @@ rknpu_submit_task(npu_submit_t *submit)
 
     job_done_num = 0;
 
-    show_task_status(__FILE__, __LINE__);
-    logger_info("status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_STATUS)));
-    logger_info("row status: 0x%x\n", read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS)));
-
     job_commit_pc(task_ptr, task_ptr_phys, task_start, task_number, core, flags);
-
-    show_task_status(__FILE__, __LINE__);
 
     job_wait_complete(core, task_number, tmo);
 }
