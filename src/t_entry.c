@@ -8,7 +8,7 @@
 #include "npu/rknpu.h"
 #include "dev/cru.h"
 #include "dev/scmi.h"
-#include "dev/pcie.h"
+// #include "dev/pcie.h"
 
 #include "t_sysreg.h"
 
@@ -473,6 +473,10 @@ t_kernel_main(uint64_t id)
     extern void rknpu_test_concat(void);
     extern void rknpu_test_eltwise_add(void);
     extern void rknpu_test_conv2d_bs(void);
+    extern void rknpu_test_reshape(void);
+    extern void rknpu_test_mul(void);
+    extern void rknpu_test_sigmoid(void);
+    extern void rknpu_test_softmax(void);
 
     // RKNPU 初始化测试
     rknpu_init();
@@ -487,6 +491,10 @@ t_kernel_main(uint64_t id)
     rknpu_test_concat();
     rknpu_test_eltwise_add();
     rknpu_test_conv2d_bs();
+    rknpu_test_reshape();
+    rknpu_test_mul();
+    rknpu_test_sigmoid();
+    rknpu_test_softmax();
 
     }
 #endif

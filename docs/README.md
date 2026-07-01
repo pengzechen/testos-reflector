@@ -62,6 +62,10 @@ bootm 0x400000
 | `test_concat.c` | `rknpu_test_concat` | Concat INT8 | Channel 轴拼接, CPU |
 | `test_eltwise_add.c` | `rknpu_test_eltwise_add` | Eltwise Add INT8 | 饱和加法, CPU |
 | `test_conv2d_bs.c` | `rknpu_test_conv2d_bs` | Conv2D + OUT_CVT | INT32→INT8 硬件 requantize |
+| `test_reshape.c` | `rknpu_test_reshape` | Reshape INT8 | memcpy 验证, CPU |
+| `test_mul.c` | `rknpu_test_mul` | Mul INT8 | 饱和乘法, scale/shift, CPU |
+| `test_sigmoid.c` | `rknpu_test_sigmoid` | Sigmoid INT8 | 256 字节 LUT 查表, CPU |
+| `test_softmax.c` | `rknpu_test_softmax` | Softmax INT8 | 整数查表法 softmax, CPU |
 
 ## NPU 算子库 (npulib/)
 
@@ -69,12 +73,16 @@ bootm 0x400000
 
 | 文件 | 功能 |
 |------|------|
-| `npu_conv2d.h` | Conv2D 参数结构体 |
-| `npu_conv2d.c` | Conv2D/DWConv2D 寄存器生成 |
+| `npu_conv2d.h/c` | Conv2D/DWConv2D 参数与寄存器生成 |
 | `npu_matmul.c` | Matmul 寄存器生成 |
 | `npu_dpu.h` | DPU 描述符结构体 (BS/BN/EW/OUT_CVT) |
 | `npu_cna.h` | CNA (Convolution Accelerator) 描述符 |
 | `npu_hw.h` | 硬件寄存器地址和位域定义 |
+| `npu_math.h/c` | 共享数学查找表 (sigmoid_lut, exp_lut) |
+| `npu_reshape.h/c` | Reshape (memcpy) |
+| `npu_mul.h/c` | Mul INT8 饱和乘法 |
+| `npu_sigmoid.h/c` | Sigmoid INT8 LUT 查表 |
+| `npu_softmax.h/c` | Softmax INT8 整数查表法 |
 
 ## OUT_CVT 算子开发记录
 
