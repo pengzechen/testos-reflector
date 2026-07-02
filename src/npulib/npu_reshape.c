@@ -4,5 +4,5 @@
 void
 reshape_int8(reshape_params_t *p)
 {
-    memcpy(p->output, p->input, p->total_bytes);
+    memcpy_neon(p->output, p->input, p->total_bytes);
 }

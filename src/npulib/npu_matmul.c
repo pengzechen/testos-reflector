@@ -510,6 +510,15 @@ gen_matmul_int8_tiled(matmul_params_t *params)
     max_m = (max_m / 4) * 4;
     if (max_m == 0)
         return -1;
+    /*
+     * tile_m feeds narrow HW register fields (feature_grains=tile_m+1 is 10-bit,
+     * max 1023). Clamp to a value proven safe. test_tile_matmul validated
+     * tile_m=64; on-board YOLO confirmed larger tiles work once K/N are 32-
+     * aligned. 512 keeps us well inside the 10-bit field. Large-K matmuls are
+     * CBUF-limited below this anyway (e.g. K=4096 -> max_m=64), so this only
+     * lifts the tile count for small-K convs. */
+    if (max_m > 512)
+        max_m = 512;
 
     if (max_m >= m) {
         params->num_tiles = 1;

@@ -152,3 +152,78 @@ Offset  Size   Description
 0x7A    2088   op_table (87 × 24 bytes, 6 × uint32 per op)
 ...     ...    weight_data (int8 weights + fp32 bias + q20 scales)
 ```
+
+## 裸机推理（TestOS / RK3588 NPU）
+
+`.tyolo` 里 bias/anchors 是 float32，而目标固件用 `-mgeneral-regs-only`（无 FPU）。
+因此新增了一条**纯整数**流水线，与 LLaMA 的做法一致：
+
+### 设备侧 C 实现 `src/yolo/`
+
+| 文件 | 职责 |
+|------|------|
+| `yolo.h` | `.ydev` 格式 + 运行时结构体 |
+| `yolo_model.c` | 解析 `.ydev`，把每个 conv 权重预排布进常驻 NC1HWC2 DMA 缓冲 |
+| `yolo_conv.c` | im2col + 分块 INT8 NPU matmul（复用 `gen_matmul_int8_tiled`）→ INT32 |
+| `yolo_ops.c` | bias 加 + 动态 requant + SiLU（查 `sigmoid_lut`）+ maxpool/upsample/concat/add，全整数 |
+| `yolo_forward.c` | 87 算子的 op-table 解释器 |
+| `yolo_postprocess.c` | 定点 sigmoid 解框 + 整数 NMS + letterbox 反缩放 + COCO 名称 |
+| `src/test_yolo.c` | 测试入口（`t_entry.c` 中调用） |
+
+关键点：conv 走 im2col + matmul，而不是 `gen_conv2d_int8`——16×160×160 的早期特征图
+超出 NPU CBUF 单块容量，分块 matmul 才能覆盖（离线核对：60 个 conv 全部满足约束，
+最多 8 tiles）。所有 conv 通过 `weight_int8`/`feature_data` 布局，与 matmul 完全一致。
+
+### 主机侧工具（需 numpy + torch/cv2，用 `D:\Py\python.exe`）
+
+```bash
+# 1) 生成整数化设备包 .ydev（权重 + 已量化的 bus.jpg 输入 + letterbox 元数据）
+D:/Py/python.exe export_device.py --npz weights/yolov5n_int8.npz \
+    --image weights/bus.jpg --output weights/yolov5n.ydev --sim
+```
+
+`--sim` 会用一段**与 C 逐位相同的整数** Python 模型（`CModel`）跑一遍，作为烧板前的
+golden 对照。`export_device.py` 里 `CModel` 的算术就是设备 C 的“规范”。
+
+`.ydev` 格式：64B 头 + detect 索引 + anchors(Q16 int) + strides(int) + op_table(87×32B)
++ 权重块（`int8` 权重 + `int64` bias_q + `w_scale_q20`）+ 内嵌 INT8 输入 `[3,320,320]`。
+
+### 主机侧验证（无需上板，最强校验）
+
+`host_test.c` 直接把**设备端 C 源码**（`yolo_model/ops/forward/postprocess.c`）在 PC 上
+编译，NPU conv 用等价的 CPU 整数 matmul 替换，跑真实 `.ydev`：
+
+```bash
+cd tools/yolo
+gcc -O0 -w -I../../include -I../../src -c ../../src/npulib/npu_math.c -o /tmp/npu_math.o
+gcc -O0 -w -I../../include -I../../src host_test.c /tmp/npu_math.o -o /tmp/yt
+/tmp/yt weights/yolov5n.ydev
+```
+
+输出与 `export_device.py --sim` 一致（8 个检测，逐层 s_q20 与 golden 完全相同），
+说明设备 C 的定点算术正确；NPU 寄存器生成本身已由 `test_conv2d`/`test_tile_matmul` 覆盖。
+
+### 上板运行
+
+`.ydev` 由 U-Boot TFTP 预加载到 `0x21000000`（在 1GB 堆之上、避开 LLM 的 `0x20000000`）：
+
+```
+# U-Boot: 先把 kernel.uimg 和 yolov5n.ydev 都 tftp 到位
+tftp 0x21000000 yolov5n.ydev
+tftp 0x00400000 kernel.uimg     # 或按现有 boot 流程
+bootm ...
+```
+
+内核启动后 `rknpu_test_yolo()` 会加载模型、跑前向、打印检测框。预期（bus.jpg）：
+
+```
+YOLO detections:
+  [0] person: conf=0.953 [71,384,199,874]
+  [1] bus:    conf=0.874 [65,302,707,758]
+  [2] person: conf=0.815 [229,388,356,845]
+  ... （5×person + bus + traffic light，共 8 个）
+```
+
+与 FP32 参考（`ref_forward.py`）的 person/bus 目标一致；两个 conf≈0.25 的 potted plant
+恰好卡在阈值边界，定点后处理下略低于 0.25 被滤掉，属量化边界效应而非逻辑错误。
+

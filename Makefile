@@ -57,6 +57,16 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# YOLO 与 NPU matmul 是纯整数计算密集型代码，用 -O2 编译（无 MMIO/volatile 依赖）。
+# 其余内核保持 -O0 以便调试。
+$(BUILD_DIR)/yolo/%.o: $(SRC_DIR)/yolo/%.c | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(CC) $(filter-out -O0,$(CFLAGS)) -O2 -c $< -o $@
+
+$(BUILD_DIR)/npulib/npu_matmul.o: $(SRC_DIR)/npulib/npu_matmul.c | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(CC) $(filter-out -O0,$(CFLAGS)) -O2 -c $< -o $@
+
 # 编译汇编源文件
 $(BUILD_DIR)/%_asm.o: $(SRC_DIR)/%.S | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
@@ -86,9 +96,19 @@ uimg: $(BIN_TARGET)
 	mkimage -A arm64 -O linux -T kernel -C none -a 0x400000 -e 0x400000 -n "testos Kernel" -d build/testos.bin testos-reflector-src_aarch64-opi5p.uimg 
 
 uboot: uimg
-	cp testos-reflector_aarch64-opi5p.uimg /data/docker/tftpboot/data/kernel.uimg
+	cp testos-reflector-src_aarch64-opi5p.uimg /data/docker/tftpboot/data/kernel.uimg
 	cp tools/orangepi5/rk3588-orangepi-5-plus.dtb /data/docker/tftpboot/data/rk3588-orangepi-5-plus.dtb
 	echo "uboot done"
+
+# Deploy for the YOLO boot script (boot_yolo.cmd tftps kernel.uimg + yolov5n.ydev).
+# Mirrors the layout the board expects: <tftproot>/testos-reflector/...
+uboot-yolo: uimg
+	mkdir -p /data/docker/tftpboot/data/testos-reflector/tools/yolo/weights
+	mkdir -p /data/docker/tftpboot/data/testos-reflector/tools/orangepi5
+	cp testos-reflector-src_aarch64-opi5p.uimg /data/docker/tftpboot/data/testos-reflector/kernel.uimg
+	cp tools/yolo/weights/yolov5n.ydev /data/docker/tftpboot/data/testos-reflector/tools/yolo/weights/yolov5n.ydev
+	cp tools/orangepi5/rk3588-orangepi-5-plus.dtb /data/docker/tftpboot/data/testos-reflector/tools/orangepi5/rk3588-orangepi-5-plus.dtb
+	echo "uboot-yolo done"
 
 # 清理
 clean:
