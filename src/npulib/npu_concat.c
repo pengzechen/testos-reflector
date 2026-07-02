@@ -12,12 +12,10 @@ concat_channel_int8(concat_params_t *p)
         for (int x = 0; x < p->w; x++) {
             int c_offset = 0;
             for (int i = 0; i < p->num_inputs; i++) {
-                int ch = p->inputs[i].channels;
-                const int8_t *src = p->inputs[i].data
-                    + (y * p->w + x) * ch;
-                int8_t *dst = p->output
-                    + (y * p->w + x) * total_c + c_offset;
-                memcpy(dst, src, ch);
+                int           ch  = p->inputs[i].channels;
+                const int8_t *src = p->inputs[i].data + (y * p->w + x) * ch;
+                int8_t       *dst = p->output + (y * p->w + x) * total_c + c_offset;
+                memcpy_neon(dst, src, ch);
                 c_offset += ch;
             }
         }
