@@ -35,18 +35,27 @@ rknpu_test_llm(void)
         return;
     }
 
-    /* encode prompt */
-    const char *prompt = "Once upon a time";
-    uint32_t ids[64];
-    int n_ids = llm_tokenizer_encode(&g_tokenizer, prompt, ids, 64);
+    /* generate several stories, each from a different opening prompt */
+    static const char *prompts[] = {
+        "Once upon a time",
+        "One day a cat",
+        "There was a little girl who",
+    };
+    int n_prompts = (int)(sizeof(prompts) / sizeof(prompts[0]));
 
-    logger_info("Prompt: \"%s\" -> %d tokens: ", prompt, n_ids);
-    for (int i = 0; i < n_ids; i++)
-        logger_info("%d ", ids[i]);
-    logger_info("\n");
+    for (int s = 0; s < n_prompts; s++) {
+        const char *prompt = prompts[s];
+        uint32_t ids[64];
+        int n_ids = llm_tokenizer_encode(&g_tokenizer, prompt, ids, 64);
 
-    /* generate */
-    llm_generate(&g_model, &g_tokenizer, ids, n_ids, 128);
+        logger_info("\n--- Story %d/%d ---\n", s + 1, n_prompts);
+        logger_info("Prompt: \"%s\" -> %d tokens: ", prompt, n_ids);
+        for (int i = 0; i < n_ids; i++)
+            logger_info("%d ", ids[i]);
+        logger_info("\n");
+
+        llm_generate(&g_model, &g_tokenizer, ids, n_ids, 256);
+    }
 
     logger_info("========================================\n");
     logger_info("  LLM Test Complete\n");

@@ -316,6 +316,11 @@ llm_generate(llm_model_t *m, llm_tokenizer_t *tok,
     char decode_buf[64];
     uint32_t pos = 0;
 
+    /* Fresh story: clear the repetition-penalty history so a previous
+     * generation can't bias this one. KV cache is written from pos=0 and
+     * naturally overwritten as we go. */
+    m->recent_n = 0;
+
     logger_info("LLM: generating (prompt_len=%d, max=%d)...\n", prompt_len, max_tokens);
     uint64_t start_tick = timer_get_system_ticks();
 

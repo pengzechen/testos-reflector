@@ -23,6 +23,11 @@ void
 llm_prelayout_weight(llm_model_t *m, llm_weight_t *weight)
 {
     (void)m;
+#ifdef LLM_CPU_MATMUL
+    /* CPU backend uses weight->data directly; no NC1HWC2 layout needed. */
+    weight->dma_w = NULL;
+    return;
+#else
     int N = (int)weight->rows;
     int K = (int)weight->cols;
 
@@ -48,6 +53,7 @@ llm_prelayout_weight(llm_model_t *m, llm_weight_t *weight)
     /* clean once — weight is immutable, NPU only ever reads it */
     clean_dcache_va_range(wbuf, wt_size);
     weight->dma_w = wbuf;
+#endif /* LLM_CPU_MATMUL */
 }
 
 /*
@@ -70,6 +76,44 @@ llm_npu_matmul(llm_model_t *m, int8_t *output,
                int32_t *logits32_out)
 {
     int N = (int)weight->rows;
+
+#ifdef LLM_CPU_MATMUL
+    /* CPU reference backend: compute acc_int32 = W_int8 @ x_int8 directly,
+     * then run the EXACT SAME dynamic requant + Q20 scale as the NPU path so
+     * the two builds can be compared token-by-token. int8_t is unsigned on
+     * this toolchain — read both operands through (signed char). */
+    (void)m;
+    (void)get_dma_addr;
+    static int32_t acc[4096];
+    int32_t maxabs = 1;
+    for (int row = 0; row < M; row++) {
+        for (int n = 0; n < N; n++) {
+            int32_t dot = 0;
+            const int8_t *wrow = weight->data + (int64_t)n * K;
+            const int8_t *xrow = input + (int64_t)row * K;
+            for (int k = 0; k < K; k++)
+                dot += (int32_t)(signed char)xrow[k] * (int32_t)(signed char)wrow[k];
+            acc[n] = dot;
+            int32_t a = dot < 0 ? -dot : dot;
+            if (a > maxabs) maxabs = a;
+            if (logits32_out) logits32_out[row * N + n] = dot;
+        }
+        for (int n = 0; n < N; n++) {
+            int64_t num = (int64_t)acc[n] * 127 * 2;
+            int64_t q;
+            if (acc[n] >= 0) q = (num + maxabs) / ((int64_t)maxabs * 2);
+            else             q = (num - maxabs) / ((int64_t)maxabs * 2);
+            if (q > 127) q = 127;
+            if (q < -128) q = -128;
+            output[row * N + n] = (int8_t)q;
+        }
+    }
+    uint64_t prod = (uint64_t)maxabs * (uint64_t)weight->w_scale_q20
+                    * (uint64_t)in_scale;
+    uint64_t out_s = prod / ((uint64_t)127 << LLM_SCALE_SHIFT);
+    if (out_s < 1) out_s = 1;
+    return (uint32_t)out_s;
+#else
 
     /* Zero DMA buffers — NC1HWC2 padding must be 0 */
     uint32_t K_pad = ((K + 31) / 32) * 32;
@@ -210,4 +254,5 @@ llm_npu_matmul(llm_model_t *m, int8_t *output,
     uint64_t out_s = prod / ((uint64_t)127 << LLM_SCALE_SHIFT);
     if (out_s < 1) out_s = 1;
     return (uint32_t)out_s;
+#endif /* LLM_CPU_MATMUL */
 }

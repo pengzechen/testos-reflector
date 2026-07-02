@@ -19,6 +19,10 @@ BUILD_DIR = build
 # 编译标志
 CFLAGS = -g -O0 -Wall -nostdlib -nostartfiles -ffreestanding -mgeneral-regs-only
 CFLAGS += -I$(INCLUDE_DIR) -I$(SRC_DIR) -D__LOAD_ADDR__=0x400000 -DT_SMP_NUM=$(SMP)
+# CPU 对照版：make CPU_MATMUL=1 —— matmul 走纯 CPU 而非 NPU（逐 token 对照用）
+ifeq ($(CPU_MATMUL),1)
+CFLAGS += -DLLM_CPU_MATMUL
+endif
 ASFLAGS = -g -O0 -Wall -I$(INCLUDE_DIR) -D__LOAD_ADDR__=0x400000 -DT_SMP_NUM=$(SMP)
 
 # 链接标志
