@@ -53,6 +53,9 @@ typedef struct {
     uint32_t      rows;
     uint32_t      cols;
     uint32_t      w_scale_q20;  /* weight quant scale in Q20 */
+    int8_t       *dma_w;        /* pre-laid-out NC1HWC2 weight in a resident DMA
+                                 * buffer (cache-clean, immutable). NULL for
+                                 * non-matmul weights (embedding / rms). */
 } llm_weight_t;
 
 typedef struct {
@@ -158,5 +161,9 @@ uint32_t llm_npu_matmul(llm_model_t *m, int8_t *output,
                         const int8_t *input, int M, int K,
                         const llm_weight_t *weight, uint32_t in_scale,
                         int32_t *logits32_out);
+
+/* Pre-lay-out a matmul weight into a resident, cache-clean DMA buffer.
+ * Called once at load time so llm_npu_matmul skips per-token weight layout. */
+void llm_prelayout_weight(llm_model_t *m, llm_weight_t *weight);
 
 #endif /* LLM_H */

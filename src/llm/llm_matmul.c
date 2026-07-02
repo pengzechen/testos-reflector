@@ -3,6 +3,7 @@
 #include "npu/rknpu.h"
 #include "npu/rkconfig.h"
 #include "mem/cache.h"
+#include "mem/t_mem.h"
 #include "lib/t_string.h"
 #include "lib/t_logger.h"
 
@@ -10,6 +11,43 @@ static uint32_t
 get_dma_addr(void *addr)
 {
     return (uint32_t)((uint64_t)addr & 0xFFFFFFFFu);
+}
+
+/*
+ * llm_prelayout_weight — lay out a constant weight into NC1HWC2 once, into a
+ * resident DMA buffer, and clean it from the cache. After this, per-token
+ * matmul skips the (expensive, repeated) weight memset + layout + flush.
+ * K = weight->cols, N = weight->rows.
+ */
+void
+llm_prelayout_weight(llm_model_t *m, llm_weight_t *weight)
+{
+    (void)m;
+    int N = (int)weight->rows;
+    int K = (int)weight->cols;
+
+    uint32_t K_pad = ((K + 31) / 32) * 32;
+    uint32_t N_pad = ((N + 31) / 32) * 32;
+    uint32_t wt_size = K_pad * N_pad;
+
+    int8_t *wbuf = (int8_t *)t_mem_alloc(wt_size);
+    if (!wbuf) {
+        logger_error("LLM: prelayout OOM (N=%d K=%d, %u bytes)\n", N, K, wt_size);
+        weight->dma_w = NULL;
+        return;
+    }
+    memset(wbuf, 0, wt_size);   /* NC1HWC2 padding must be 0 */
+
+    for (int n = 0; n < N; n++) {
+        for (int k = 0; k < K; k++) {
+            int dst = weight_int8(K, n + 1, k + 1);
+            wbuf[dst] = weight->data[n * K + k];
+        }
+    }
+
+    /* clean once — weight is immutable, NPU only ever reads it */
+    clean_dcache_va_range(wbuf, wt_size);
+    weight->dma_w = wbuf;
 }
 
 /*
@@ -41,7 +79,6 @@ llm_npu_matmul(llm_model_t *m, int8_t *output,
     /* INT32 output: C2=4, 4 bytes/elem */
     uint32_t out_elems = ((N + 3) / 4) * 4 * M;
     memset(m->dma_input, 0, feat_size);
-    memset(m->dma_weights, 0, wt_size);
     memset(m->dma_output, 0, out_elems * 4);
 
     /* layout input to NC1HWC2 feature format (C2=16 for INT8 input) */
@@ -53,12 +90,19 @@ llm_npu_matmul(llm_model_t *m, int8_t *output,
         }
     }
 
-    /* layout weights to NC1HWC2 weight format */
-    int8_t *wbuf = m->dma_weights;
-    for (int n = 0; n < N; n++) {
-        for (int k = 0; k < K; k++) {
-            int dst = weight_int8(K, n + 1, k + 1);
-            wbuf[dst] = weight->data[n * K + k];
+    /* Weights: use the resident pre-laid-out buffer if available, else fall
+     * back to laying them out into the shared scratch buffer this call. */
+    int8_t *wbuf;
+    if (weight->dma_w) {
+        wbuf = weight->dma_w;
+    } else {
+        wbuf = m->dma_weights;
+        memset(wbuf, 0, wt_size);
+        for (int n = 0; n < N; n++) {
+            for (int k = 0; k < K; k++) {
+                int dst = weight_int8(K, n + 1, k + 1);
+                wbuf[dst] = weight->data[n * K + k];
+            }
         }
     }
 
@@ -114,10 +158,23 @@ llm_npu_matmul(llm_model_t *m, int8_t *output,
     submit.subcore_task[3] = (npu_subcore_task_t){.task_start = 0, .task_number = 0};
     submit.subcore_task[4] = (npu_subcore_task_t){.task_start = 0, .task_number = 0};
 
-    /* flush ALL DMA buffers (dma_input is lowest allocation) */
-    clean_dcache_va_range(m->dma_input, 1024 * 1024 * 16);
+    /* Flush only the buffers the NPU will read, and invalidate only what it
+     * writes. The old code flushed a fixed 16 MB window on every matmul —
+     * ~64-300x more cache-line ops than needed, dominating per-token latency.
+     *   clean:  input, weights, regcmd, tasks  (CPU -> NPU)
+     *   inval:  output                          (NPU -> CPU)
+     * Resident weights (weight->dma_w) were cleaned once at prelayout time and
+     * are immutable, so only the scratch-buffer fallback needs cleaning here. */
+    clean_dcache_va_range(m->dma_input,   feat_size);
+    if (!weight->dma_w)
+        clean_dcache_va_range(m->dma_weights, wt_size);
+    clean_dcache_va_range(m->dma_regcmd,  112 * sizeof(uint64_t));
+    clean_dcache_va_range(m->dma_tasks,   sizeof(npu_task_t));
+    /* output buffer must be clean before submit (padding zeros written above)
+     * and invalidated after so the CPU sees NPU-written results. */
+    clean_dcache_va_range(m->dma_output,  out_elems * 4);
     rknpu_submit_task(&submit);
-    invalidate_dcache_va_range(m->dma_input, 1024 * 1024 * 16);
+    invalidate_dcache_va_range(m->dma_output, out_elems * 4);
 
     /* read back INT32 output (NC1HWC2, C2=4), find max|acc| */
     int32_t *out32 = (int32_t *)m->dma_output;

@@ -53,6 +53,7 @@ llm_model_load(llm_model_t *m, const void *tlm_data, uint32_t tlm_size)
         w.rows = e->rows;
         w.cols = e->cols;
         w.w_scale_q20 = e->w_scale_q20;
+        w.dma_w = NULL;   /* set later by llm_prelayout_weight for matmul weights */
 
         uint32_t l = e->layer_idx;
         switch (e->tensor_id) {
@@ -140,6 +141,21 @@ llm_model_load(llm_model_t *m, const void *tlm_data, uint32_t tlm_size)
 
     logger_info("LLM: model loaded, KV cache %d bytes, work bufs ~%d bytes\n",
                 kv_total * 2, h + di * 3 + vocab);
+
+    /* Pre-lay-out all matmul weights into resident, cache-clean DMA buffers.
+     * This removes per-token weight memset+layout+flush (LM head alone is
+     * ~256 KB re-laid every token otherwise). */
+    for (uint32_t l = 0; l < m->cfg.num_hidden_layers; l++) {
+        llm_prelayout_weight(m, &m->wq[l]);
+        llm_prelayout_weight(m, &m->wk[l]);
+        llm_prelayout_weight(m, &m->wv[l]);
+        llm_prelayout_weight(m, &m->wo[l]);
+        llm_prelayout_weight(m, &m->w_gate[l]);
+        llm_prelayout_weight(m, &m->w_up[l]);
+        llm_prelayout_weight(m, &m->w_down[l]);
+    }
+    llm_prelayout_weight(m, &m->lm_head);
+    logger_info("LLM: matmul weights pre-laid-out into resident DMA buffers\n");
 
     return 0;
 }

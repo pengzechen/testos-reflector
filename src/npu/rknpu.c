@@ -237,16 +237,16 @@ void
 job_wait_complete(uint32_t core, uint32_t task_number, uint32_t tmo)
 {
     (void) core;
-    int l = 0;
+    /* Busy-wait on the IRQ-set completion flag. NPU jobs for this workload
+     * finish in microseconds, so poll tightly with a 1us backoff instead of
+     * the old 1ms sleep. Budget = tmo(ms) * 1000 us. */
+    uint32_t budget_us = tmo * 1000u;
     do {
         if (check_job_done()) {
             return;
-        } else {
-            timer_delay_ms(1);
-            tmo--;
-            l++;
         }
-    } while (tmo > 0);
+        timer_delay_us(1);
+    } while (budget_us-- > 0);
     uint32_t task_status = read32((void *) (NPU0_BASE + RKNPU_PC_TASK_STATUS));
     uint32_t int_status = read32((void *) (NPU0_BASE + RKNPU_INT_STATUS));
     uint32_t int_raw = read32((void *) (NPU0_BASE + RKNPU_INT_RAW_STATUS));
