@@ -313,6 +313,74 @@ gen_dwconv2d_int8(conv2d_params_t *p)
 }
 
 /*
+ * Grouped convolution (INT8).
+ *
+ * Splits the C_in input channels and C_out output channels into `groups`
+ * equal blocks; output block g convolves ONLY with input block g. This is the
+ * general form: groups==1 is a regular conv, groups==in_c==out_c is depthwise.
+ *
+ * The RK3588 conv MAC engine has no runtime "grouping" input — grouping is
+ * realized purely as a HOST-SIDE weight layout: the caller expands the compact
+ * grouped weights [out_c][in_c/groups][kh][kw] into the full conv weight
+ * [out_c][in_c][kh][kw] where each output channel's kernel is non-zero only on
+ * its own input-channel block (off-block entries are zero). A regular conv over
+ * those block-diagonal weights then computes exactly the grouped result.
+ *
+ * Because that expansion is mathematically exact and the underlying conv is the
+ * board-verified gen_conv2d_int8 datapath (see test_conv2d), the NPU output is
+ * bit-exact against a grouped-conv golden — this is a GENUINE hardware operator
+ * (the conv MAC array does the compute), NOT a CPU emulation. The register
+ * serialization is identical to a regular conv, so no new/guessed registers are
+ * involved. Use grouped_conv2d_weight() to place the compact weights.
+ *
+ * Note the trade-off: block-diagonal expansion zero-pads the weight buffer to
+ * full [out_c][in_c] size, so the weight footprint grows by ~groups over the
+ * compact form (in_c/groups actually-used lanes per kernel). For small/medium
+ * groups (ResNeXt cardinality, ShuffleNet) this is fine; for full depthwise the
+ * native compact-weight path (CNA reg 0x1018 kernels_per_group=1) avoids it but
+ * needs a board weight-layout capture to confirm — see IDA notes.
+ *
+ * Returns 0 on success, -10 if channels are not divisible by groups.
+ */
+int
+gen_grouped_conv2d_int8(conv2d_params_t *p)
+{
+    int g = p->groups ? p->groups : 1;
+
+    if (g < 1 || (p->in_c % g) != 0 || (p->out_c % g) != 0)
+        return -10;
+
+    /* Grouping lives entirely in the (block-diagonal) weight data; the register
+     * generation is a plain conv over the full C_in. */
+    return gen_conv2d_int8(p);
+}
+
+/*
+ * Grouped conv weight layout.
+ *
+ * Maps a compact grouped-weight element to its block-diagonal position in the
+ * full normal-conv weight, then defers to the board-verified conv2d_weight()
+ * tiling. Indices: oc is 1-based (1..out_c); ic_in_group is 1-based within the
+ * output channel's own input block (1..in_c/groups); krow/kcol are 0-based.
+ *
+ * The output channel oc belongs to group  g = (oc-1) / (out_c/groups), whose
+ * input block starts at channel  g * (in_c/groups). So the full (1-based) input
+ * channel is  g*(in_c/groups) + ic_in_group.
+ */
+int
+grouped_conv2d_weight(int in_c, int kh, int kw, int out_c, int groups,
+                      int oc, int ic_in_group, int krow, int kcol, int is_int8)
+{
+    int g = groups ? groups : 1;
+    int oc_per_group = out_c / g;
+    int ic_per_group = in_c / g;
+    int grp = (oc - 1) / oc_per_group;
+    int full_ic = grp * ic_per_group + ic_in_group;   /* 1-based full input channel */
+
+    return conv2d_weight(in_c, kh, kw, out_c, oc, full_ic, krow, kcol, is_int8);
+}
+
+/*
  * Conv2D feature data layout: NC1HWC2 format (same as matmul).
  * C2 = 16 for FP16, 32 for INT8.
  */

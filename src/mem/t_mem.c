@@ -11,16 +11,42 @@ extern int logger_warn(const char *fmt, ...);
  * 内存块头结构
  * 每个内存块（无论空闲还是已分配）都有这个头部
  */
+// 内存对齐大小（64字节对齐，适配 NPU DMA）
+#define MEM_ALIGNMENT 64
+#define MEM_ALIGN(size) (((size) + (MEM_ALIGNMENT - 1)) & ~(MEM_ALIGNMENT - 1))
+
 typedef struct mem_block {
     size_t size;              // 块大小（不包括头部）
     int is_free;              // 1: 空闲, 0: 已分配
     struct mem_block *next;   // 指向下一个块（空闲链表或物理地址顺序）
     struct mem_block *prev;   // 指向前一个块
+
+    /*
+     * 填充：让头部大小恰好等于 MEM_ALIGNMENT(64) 字节。
+     *
+     * 返回给调用者的数据指针 = (uint8_t*)block + sizeof(mem_block_t)。
+     * 只有当头部大小本身是 64 的倍数、且 block 起始 64 对齐时，
+     * 该数据指针才是 64 对齐。
+     *
+     * 之前头部只有 32 字节（size_t+int+两个指针），于是每次分配返回的
+     * 指针只有 32 字节对齐。是否落到 64 边界取决于此前所有分配的累计
+     * 大小 —— 这会随分配顺序漂移。NPU 的 DMA 缓冲区（regcmd/输入/权重/
+     * 输出）一旦落到非 64 对齐地址，大尺寸 matmul 的描述符按 64 步幅
+     * 寻址会越界，硬件报总线错误 int_raw=0xc0000000（不在 int_mask=0x300
+     * 内，无完成中断 → Job wait timeout）。这正是“加了 grouped conv 测试
+     * （泄漏 21664B, 21664%64==32，翻转了后续所有分配的 64/32 对齐奇偶）
+     * 之后 YOLO 首个 conv 偶发卡死”的根因，而非某个硬件位没有恢复。
+     *
+     * 头部本身对齐到 MEM_ALIGNMENT 后，配合 split_block 里 64 对齐的块大小，
+     * 保证每一个返回指针都稳定 64 对齐，消除该奇偶翻转。
+     */
+    uint8_t _pad[MEM_ALIGNMENT
+                 - sizeof(struct { size_t a; int b; void *c; void *d; })];
 } mem_block_t;
 
-// 内存对齐大小（64字节对齐，适配 NPU DMA）
-#define MEM_ALIGNMENT 64
-#define MEM_ALIGN(size) (((size) + (MEM_ALIGNMENT - 1)) & ~(MEM_ALIGNMENT - 1))
+/* 编译期确保头部恰好一个对齐粒度大小；否则返回指针不再 64 对齐。 */
+_Static_assert(sizeof(mem_block_t) == MEM_ALIGNMENT,
+               "mem_block_t header must equal MEM_ALIGNMENT for aligned payload");
 
 // 最小块大小（避免碎片过小）
 #define MIN_BLOCK_SIZE 64
@@ -38,20 +64,25 @@ extern void __heap_flag(void);
  */
 void t_mem_init(size_t heap_size)
 {
-    // 获取链接脚本定义的堆起始地址
-    heap_start = (uint8_t *)&__heap_flag;
-    heap_end = heap_start + heap_size;
-    heap_total_size = heap_size;
+    // 获取链接脚本定义的堆起始地址，并对齐到 MEM_ALIGNMENT。
+    // 链接脚本当前已 16KB 对齐（ALIGN(1<<14)），此处再兜底一次：
+    // 保证即使链接布局改动，t_mem_alloc 返回的数据指针仍稳定 64 对齐
+    // （头部大小 == 64，见 mem_block_t 定义处的说明）。
+    uint64_t raw     = (uint64_t)&__heap_flag;
+    uint64_t aligned = (raw + (MEM_ALIGNMENT - 1)) & ~(uint64_t)(MEM_ALIGNMENT - 1);
+    heap_start = (uint8_t *)aligned;
+    heap_total_size = heap_size - (size_t)(aligned - raw);
+    heap_end = heap_start + heap_total_size;
 
     // 初始化第一个空闲块（整个堆）
     free_list_head = (mem_block_t *)heap_start;
-    free_list_head->size = heap_size - sizeof(mem_block_t);
+    free_list_head->size = heap_total_size - sizeof(mem_block_t);
     free_list_head->is_free = 1;
     free_list_head->next = NULL;
     free_list_head->prev = NULL;
 
-    logger_info("t_mem initialized: start=0x%lx, size=%lu KB\n", 
-               (unsigned long)heap_start, heap_size / 1024);
+    logger_info("t_mem initialized: start=0x%lx, size=%lu KB\n",
+               (unsigned long)heap_start, heap_total_size / 1024);
 }
 
 /**

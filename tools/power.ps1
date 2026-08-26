@@ -10,7 +10,7 @@ param(
     [string]$Action
 )
 
-$port = New-Object System.IO.Ports.SerialPort "COM15", 9600
+$port = New-Object System.IO.Ports.SerialPort "COM13", 9600
 $port.Open()
 
 switch ($Action) {

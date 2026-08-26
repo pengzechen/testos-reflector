@@ -467,6 +467,7 @@ t_kernel_main(uint64_t id)
     extern void rknpu_test_matmul(void);
     extern void rknpu_test_conv2d(void);
     extern void rknpu_test_dwconv2d(void);
+    extern void rknpu_test_grouped_conv2d(void);
     extern void rknpu_test_deconv(void);
     extern void rknpu_test_tile_matmul(void);
     extern void rknpu_test_avgpool(void);
@@ -489,6 +490,7 @@ t_kernel_main(uint64_t id)
     rknpu_test_matmul();
     rknpu_test_conv2d();
     rknpu_test_dwconv2d();
+    rknpu_test_grouped_conv2d();
     rknpu_test_deconv();
     rknpu_test_tile_matmul();
     rknpu_test_avgpool();
